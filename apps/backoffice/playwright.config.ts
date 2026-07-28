@@ -7,7 +7,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [["html", { open: "never" }]],
   use: {
-    baseURL: process.env.BACKOFFICE_E2E_URL ?? "http://127.0.0.1:3001",
+    baseURL: process.env.BACKOFFICE_E2E_URL ?? "http://127.0.0.1:3821",
     trace: "retain-on-failure",
   },
   projects: [

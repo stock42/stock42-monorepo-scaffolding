@@ -3,7 +3,7 @@ import { MeResponseSchema, type SessionActor } from "@stock42/contracts/auth";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-const apiUrl = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:4000";
+const apiUrl = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:3822";
 
 function serializeCookies(values: { name: string; value: string }[]) {
   return values.map(({ name, value }) => `${name}=${value}`).join("; ");

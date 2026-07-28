@@ -64,6 +64,9 @@ El formato sigue una versión simplificada de
 
 ### Changed
 
+- Se alinearon los puertos configurables de WebApp (`WEBAPP_PORT=3820`),
+  Backoffice (`BACKOFFICE_PORT=3821`) y API (`API_PORT=3822`) con sus virtual
+  hosts Nginx, el generador de `.env`, los defaults runtime, Playwright y CI.
 - Se retiró `nginx/clinical.example.com` del conjunto de virtual hosts de
   referencia.
 - Se definió el contrato obligatorio `build`/`start`/`dev` para todas las apps,

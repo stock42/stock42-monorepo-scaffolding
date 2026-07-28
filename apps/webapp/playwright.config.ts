@@ -7,7 +7,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [["html", { open: "never" }]],
   use: {
-    baseURL: process.env.WEBAPP_E2E_URL ?? "http://127.0.0.1:3000",
+    baseURL: process.env.WEBAPP_E2E_URL ?? "http://127.0.0.1:3820",
     trace: "retain-on-failure",
   },
   projects: [

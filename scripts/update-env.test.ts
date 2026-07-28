@@ -64,7 +64,11 @@ describe("update:env", () => {
           DEEPSEEK_API_KEY: "existing-provider-key",
           DEEPSEEK_BASE_URL: "",
         },
-        webapp: { API_INTERNAL_URL: "http://api.internal:4000" },
+        webapp: {
+          WEBAPP_PORT: "4920",
+          API_INTERNAL_URL: "http://api.internal:4388",
+        },
+        backoffice: { BACKOFFICE_PORT: "4921" },
       }),
       "production",
     );
@@ -76,8 +80,10 @@ describe("update:env", () => {
     expect(merged.agent.DEEPSEEK_BASE_URL).toBe("https://api.deepseek.com");
     expect(merged.api.CORS_ORIGINS).not.toBe("*");
     expect(merged.api.COOKIE_SECURE).toBe("true");
-    expect(merged.webapp.API_INTERNAL_URL).toBe("http://api.internal:4000");
-    expect(merged.backoffice.API_INTERNAL_URL).toBe("http://api.internal:4000");
+    expect(merged.webapp.WEBAPP_PORT).toBe("4920");
+    expect(merged.backoffice.BACKOFFICE_PORT).toBe("4921");
+    expect(merged.webapp.API_INTERNAL_URL).toBe("http://api.internal:4388");
+    expect(merged.backoffice.API_INTERNAL_URL).toBe("http://api.internal:4388");
   });
 
   test("actualiza claves administradas y conserva contenido adicional", () => {
@@ -125,5 +131,42 @@ describe("update:env", () => {
       expect(Object.keys(defaults[app]).sort()).toEqual(templateKeys);
       expect([...promptedByApp[app]].sort()).toEqual(templateKeys);
     }
+  });
+
+  test("mantiene alineados los puertos por defecto, scripts y Nginx", async () => {
+    const defaults = buildScenarioDefaults("development", () => "x".repeat(32));
+    const apiWithoutPort = { ...defaults.api };
+    delete apiWithoutPort.API_PORT;
+
+    expect(loadConfig(apiWithoutPort).port).toBe(3822);
+    expect(defaults.api.API_PORT).toBe("3822");
+    expect(defaults.webapp.WEBAPP_PORT).toBe("3820");
+    expect(defaults.backoffice.BACKOFFICE_PORT).toBe("3821");
+    expect(defaults.webapp.API_INTERNAL_URL).toBe("http://127.0.0.1:3822");
+    expect(defaults.backoffice.API_INTERNAL_URL).toBe("http://127.0.0.1:3822");
+
+    const webappManifest = await Bun.file(
+      resolve(import.meta.dir, "..", "apps", "webapp", "package.json"),
+    ).json();
+    const backofficeManifest = await Bun.file(
+      resolve(import.meta.dir, "..", "apps", "backoffice", "package.json"),
+    ).json();
+    expect(webappManifest.scripts.dev).toContain("${WEBAPP_PORT:-3820}");
+    expect(webappManifest.scripts.start).toContain("${WEBAPP_PORT:-3820}");
+    expect(backofficeManifest.scripts.dev).toContain("${BACKOFFICE_PORT:-3821}");
+    expect(backofficeManifest.scripts.start).toContain("${BACKOFFICE_PORT:-3821}");
+
+    const webappNginx = await Bun.file(
+      resolve(import.meta.dir, "..", "nginx", "example.com"),
+    ).text();
+    const backofficeNginx = await Bun.file(
+      resolve(import.meta.dir, "..", "nginx", "backoffice.example.com"),
+    ).text();
+    const apiNginx = await Bun.file(
+      resolve(import.meta.dir, "..", "nginx", "api.example.com"),
+    ).text();
+    expect(webappNginx).toContain("proxy_pass http://127.0.0.1:3820");
+    expect(backofficeNginx).toContain("proxy_pass http://127.0.0.1:3821");
+    expect(apiNginx).toContain("proxy_pass http://127.0.0.1:3822");
   });
 });

@@ -1,5 +1,5 @@
 # Example API — api.example.com
-# Bun.serve(), port 5757
+# Bun.serve(), port 3822
 
 map $http_upgrade $example_api_connection_upgrade {
     default upgrade;
@@ -13,7 +13,7 @@ server {
     client_max_body_size 128m;
 
     location / {
-        proxy_pass http://127.0.0.1:5757;
+        proxy_pass http://127.0.0.1:3822;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

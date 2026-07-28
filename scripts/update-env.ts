@@ -70,6 +70,8 @@ const booleanKeys = new Set([
 ]);
 const integerKeys = new Set([
   "API_PORT",
+  "WEBAPP_PORT",
+  "BACKOFFICE_PORT",
   "ACCESS_TOKEN_TTL_SECONDS",
   "REFRESH_TOKEN_TTL_SECONDS",
   "RATE_LIMIT_WINDOW_SECONDS",
@@ -111,14 +113,14 @@ export function buildScenarioDefaults(
     scenario === "production"
       ? "https://example.com,https://backoffice.example.com"
       : scenario === "test"
-        ? "http://127.0.0.1:3000,http://127.0.0.1:3001"
+        ? "http://127.0.0.1:3820,http://127.0.0.1:3821"
         : "*";
 
   return {
     api: {
       NODE_ENV: scenario,
       API_HOST: "127.0.0.1",
-      API_PORT: "4000",
+      API_PORT: "3822",
       MONGODB_URI: "mongodb://127.0.0.1:27017",
       MONGODB_DB: "stock42_existing",
       AUTH_ACCESS_SECRET: createSecret(),
@@ -170,8 +172,14 @@ export function buildScenarioDefaults(
       TELEGRAM_DELIVERY_INTERVAL_MS: "1000",
       TELEGRAM_POLLING_ENABLED: scenario === "production" ? "true" : "false",
     },
-    webapp: { API_INTERNAL_URL: "http://127.0.0.1:4000" },
-    backoffice: { API_INTERNAL_URL: "http://127.0.0.1:4000" },
+    webapp: {
+      WEBAPP_PORT: "3820",
+      API_INTERNAL_URL: "http://127.0.0.1:3822",
+    },
+    backoffice: {
+      BACKOFFICE_PORT: "3821",
+      API_INTERNAL_URL: "http://127.0.0.1:3822",
+    },
   };
 }
 
@@ -313,6 +321,8 @@ export function promptSections(values: AppEnvValues) {
     { title: "Configuración compartida", targets: sharedTargets },
     { title: "API", targets: targetsFor("api") },
     { title: "Agente", targets: targetsFor("agent") },
+    { title: "Webapp", targets: targetsFor("webapp") },
+    { title: "Backoffice", targets: targetsFor("backoffice") },
   ] as const;
 }
 
@@ -325,7 +335,7 @@ function validationError(key: string, value: string, values: AppEnvValues): stri
   if (integerKeys.has(key)) {
     const number = Number(value);
     if (!Number.isSafeInteger(number) || number < 1) return "Ingresá un entero positivo.";
-    if ((key === "API_PORT" || key === "AGENT_PORT") && number > 65_535) {
+    if (key.endsWith("_PORT") && number > 65_535) {
       return "El puerto debe estar entre 1 y 65535.";
     }
     if (key === "TELEGRAM_POLL_TIMEOUT_SECONDS" && number > 50) {

@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev -p ${WEBAPP_PORT:-3820}",
     "build": "next build",
-    "start": "next start -p 3000",
+    "start": "next start -p ${WEBAPP_PORT:-3820}",
     "check-types": "tsc --noEmit",
     "lint": "eslint .",
     "test": "bun test test",

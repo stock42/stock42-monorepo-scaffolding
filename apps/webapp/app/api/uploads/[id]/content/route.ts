@@ -1,6 +1,6 @@
 import { toBrowserResponse } from "@stock42/api-client/server";
 
-const apiUrl = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:4000";
+const apiUrl = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:3822";
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

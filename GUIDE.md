@@ -312,12 +312,17 @@ app/api/telegram-ai/access/create/route.ts
 No hay proxy catch-all. El BFF valida input con Zod, filtra headers, propaga
 solo cookies esperadas y no intenta parsear HTML como JSON.
 
-Puertos:
+Puertos por defecto:
 
-- webapp: `3000`;
-- backoffice: `3001`;
-- API: `4000`;
-- agent interno: `4100`.
+- webapp: `WEBAPP_PORT=3820`;
+- backoffice: `BACKOFFICE_PORT=3821`;
+- API: `API_PORT=3822`;
+- agent interno: `AGENT_PORT=4100`.
+
+Cada variable se configura en el `.env` de su app. Los scripts `dev` y `start`
+de las aplicaciones Next respetan el puerto configurado y conservan esos
+valores como fallback. `API_INTERNAL_URL` apunta por defecto a
+`http://127.0.0.1:3822`.
 
 ## 12. Runtime durable de agentes
 
@@ -475,9 +480,9 @@ mockea.
 de referencia de VisionSanar:
 
 ```text
-example.com                 → 127.0.0.1:3740
-backoffice.example.com      → 127.0.0.1:3742
-api.example.com             → 127.0.0.1:5757
+example.com                 → 127.0.0.1:3820
+backoffice.example.com      → 127.0.0.1:3821
+api.example.com             → 127.0.0.1:3822
 ```
 
 Cada archivo puede copiarse individualmente a la ubicación de virtual hosts de

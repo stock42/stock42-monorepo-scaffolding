@@ -1,7 +1,7 @@
 import { toBrowserResponse } from "@stock42/api-client/server";
 import type { z } from "zod";
 
-const apiUrl = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:4000";
+const apiUrl = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:3822";
 
 function requestHeaders(request: Request): Headers {
   const headers = new Headers({ accept: "application/json" });

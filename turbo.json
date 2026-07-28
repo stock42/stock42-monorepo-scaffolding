@@ -8,7 +8,8 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "env": ["API_PORT", "WEBAPP_PORT", "BACKOFFICE_PORT"]
     },
     "dev:telegram": {
       "cache": false,
@@ -16,7 +17,8 @@
     },
     "start": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "env": ["API_PORT", "WEBAPP_PORT", "BACKOFFICE_PORT"]
     },
     "check-types": {
       "dependsOn": ["^check-types"],
