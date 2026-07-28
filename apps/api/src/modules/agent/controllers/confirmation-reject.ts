@@ -1,7 +1,8 @@
+import { BackofficeAgentScopeSchema } from "@stock42/contracts/agent";
 import { getAppContext } from "@/context";
-import { HttpError } from "@/errors/HttpError";
 import { controller } from "@/http/controller";
 import { authenticatedRequest } from "@/security/request";
+import { resolveAgentTenant } from "../tenant-context";
 
 export default controller({
   name: "agent.confirmation.reject",
@@ -11,11 +12,12 @@ export default controller({
   async handler(request, response) {
     const context = getAppContext();
     const { actor } = await authenticatedRequest(request, { csrf: true });
-    if (!actor.tenantId) throw new HttpError(403, "FORBIDDEN", "Tenant requerido.");
+    const scope = BackofficeAgentScopeSchema.safeParse(request.body);
+    const tenantId = resolveAgentTenant(actor, scope.success ? scope.data.tenantId : undefined);
     const result = await context.agentClient.resolveConfirmation(
       request.params.id ?? "",
       "rejected",
-      actor.tenantId,
+      tenantId,
       actor.uuid,
     );
     return response.json(result);

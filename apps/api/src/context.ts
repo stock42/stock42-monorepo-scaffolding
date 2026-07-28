@@ -7,6 +7,7 @@ import type { AuthService } from "@/modules/auth/services/AuthService";
 import type { OperatorStorage } from "@/modules/operators/services/OperatorStorage";
 import type { TenancyService } from "@/modules/tenants/services/TenancyService";
 import type { TenantStorage } from "@/modules/tenants/services/TenantStorage";
+import type { TelegramAiAccessStorage } from "@/modules/telegram-ai/services/TelegramAiAccessStorage";
 import type { UserStorage } from "@/modules/users/services/UserStorage";
 import type { RateLimiter } from "@/security/rate-limit";
 import type { WebSocketGateway } from "@/websocket/WebSocketGateway";
@@ -20,6 +21,7 @@ export type AppContext = {
     tenants: TenantStorage;
     operators: OperatorStorage;
     users: UserStorage;
+    telegramAiAccess: TelegramAiAccessStorage;
   };
   auth: AuthService;
   tenancy: TenancyService;

@@ -32,6 +32,20 @@ const AgentConfigSchema = z
     MAX_UPLOAD_BYTES: PositiveInteger(10 * 1024 * 1024),
     TELEGRAM_BOT_TOKEN: z.string().optional(),
     TELEGRAM_POLLING_ENABLED: BooleanString,
+    TELEGRAM_API_BASE_URL: z.string().url().default("https://api.telegram.org"),
+    TELEGRAM_POLL_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(50).default(25),
+    TELEGRAM_POLL_BACKOFF_MIN_MS: PositiveInteger(1_000),
+    TELEGRAM_POLL_BACKOFF_MAX_MS: PositiveInteger(30_000),
+    TELEGRAM_DELIVERY_INTERVAL_MS: PositiveInteger(1_000),
+  })
+  .superRefine((value, context) => {
+    if (value.TELEGRAM_POLL_BACKOFF_MAX_MS < value.TELEGRAM_POLL_BACKOFF_MIN_MS) {
+      context.addIssue({
+        code: "custom",
+        path: ["TELEGRAM_POLL_BACKOFF_MAX_MS"],
+        message: "El backoff máximo no puede ser menor al mínimo.",
+      });
+    }
   })
   .transform((value) => ({
     environment: value.NODE_ENV,
@@ -60,8 +74,15 @@ const AgentConfigSchema = z
       artifactPath: resolve(value.ARTIFACT_STORAGE_PATH),
       maxUploadBytes: value.MAX_UPLOAD_BYTES,
     },
-    telegramBotToken: value.TELEGRAM_BOT_TOKEN || undefined,
-    telegramPollingEnabled: value.TELEGRAM_POLLING_ENABLED,
+    telegram: {
+      botToken: value.TELEGRAM_BOT_TOKEN || undefined,
+      pollingEnabled: value.TELEGRAM_POLLING_ENABLED,
+      apiBaseUrl: value.TELEGRAM_API_BASE_URL,
+      pollTimeoutSeconds: value.TELEGRAM_POLL_TIMEOUT_SECONDS,
+      backoffMinMs: value.TELEGRAM_POLL_BACKOFF_MIN_MS,
+      backoffMaxMs: value.TELEGRAM_POLL_BACKOFF_MAX_MS,
+      deliveryIntervalMs: value.TELEGRAM_DELIVERY_INTERVAL_MS,
+    },
   }));
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;

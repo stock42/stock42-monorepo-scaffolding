@@ -4,11 +4,13 @@ import { Button } from "@stock42/ui/components/button";
 import { Separator } from "@stock42/ui/components/separator";
 import {
   Activity,
+  Bot,
   Building2,
   ChevronRight,
   CircleGauge,
   Settings2,
   Shield,
+  Sparkles,
   UsersRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -26,6 +28,13 @@ export function ControlShell({
     { href: "/dashboard", label: "Resumen", icon: CircleGauge, visible: true },
     { href: "/tenants", label: "Tenants", icon: Building2, visible: isPlatformAdmin },
     { href: "/people", label: "Personas", icon: UsersRound, visible: !isPlatformAdmin },
+    { href: "/agent", label: "Agente AI", icon: Sparkles, visible: true },
+    {
+      href: "/telegram-ai",
+      label: "Telegram AI",
+      icon: Bot,
+      visible: isPlatformAdmin || actor.role === "tenant_owner",
+    },
   ].filter((item) => item.visible);
 
   return (

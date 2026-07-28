@@ -26,6 +26,14 @@ export const CreateAgentRunInputSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
+export const BackofficeAgentRunInputSchema = CreateAgentRunInputSchema.extend({
+  tenantId: UuidSchema,
+});
+
+export const BackofficeAgentScopeSchema = z.object({
+  tenantId: UuidSchema,
+});
+
 export const AgentRunSchema = z.object({
   uuid: UuidSchema,
   tenantId: UuidSchema,
@@ -100,6 +108,8 @@ export type AgentConfirmation = z.infer<typeof AgentConfirmationSchema>;
 export type AgentRun = z.infer<typeof AgentRunSchema>;
 export type AgentRunEvent = z.infer<typeof AgentRunEventSchema>;
 export type AgentRunStatus = z.infer<typeof AgentRunStatusSchema>;
+export type BackofficeAgentRunInput = z.infer<typeof BackofficeAgentRunInputSchema>;
+export type BackofficeAgentScope = z.infer<typeof BackofficeAgentScopeSchema>;
 export type CreateAgentRunInput = z.infer<typeof CreateAgentRunInputSchema>;
 export type InternalRunEnvelope = z.infer<typeof InternalRunEnvelopeSchema>;
 export type ToolActionClass = z.infer<typeof ToolActionClassSchema>;

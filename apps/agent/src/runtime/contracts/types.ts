@@ -18,6 +18,8 @@ export type RunDocument = AgentRun & {
   cancelRequestedAt: string | null;
   terminationRequestedAt: string | null;
   retryLimit: number;
+  telegramDeliveryStatus: "pending" | "sent" | "revoked" | null;
+  telegramConfirmationNotifiedId: string | null;
 };
 
 export type RunEventDocument = AgentRunEvent;

@@ -159,6 +159,7 @@ tenants
 operators
 users
 agent
+telegram-ai
 files
 ```
 
@@ -280,6 +281,8 @@ Los Route Handlers son BFF explícitos:
 app/api/auth/login/route.ts
 app/api/tenants/create/route.ts
 app/api/tenants/[id]/operators/create/route.ts
+app/api/agent/runs/create/route.ts
+app/api/telegram-ai/access/create/route.ts
 ```
 
 No hay proxy catch-all. El BFF valida input con Zod, filtra headers, propaga
@@ -294,22 +297,26 @@ Puertos:
 
 ## 12. Runtime durable de agentes
 
-`apps/agent` contiene cuatro entrypoints operativos:
+`apps/agent` contiene cinco entrypoints operativos:
 
 - `all.ts`: coordinador de procesos de la app;
 - `server.ts`: HTTP interno autenticado;
 - `launcher.ts`: claim y `Bun.spawn` por run;
 - `supervisor.ts`: heartbeat, deadline, cancelación y recolección;
+- `telegram.ts`: `getUpdates`, autorización y entrega de respuestas;
 - `process.ts`: ejecuta exactamente un run.
 
-El coordinador detiene los demás entrypoints si uno termina. El launcher usa un
-claim atómico, respeta concurrencia global/tenant, entrega al worker solo un
-allowlist de variables y registra PID/proceso.
+El coordinador detiene los entrypoints core si uno termina. Telegram tiene un
+supervisor separado: si su proceso termina, se reinicia con backoff y el HTTP
+permanece disponible. El launcher usa un claim atómico, respeta concurrencia
+global/tenant, entrega al worker solo un allowlist de variables y registra
+PID/proceso.
 
 ### Estado durable
 
 MongoDB contiene conversaciones, mensajes, runs, eventos, confirmations,
-procesos, uploads, artifacts y entregas. Los estados son:
+procesos, uploads, artifacts, entregas, sesiones Telegram, offset/health de
+polling y accesos `Telegram AI`. Los estados son:
 
 ```text
 queued → starting → running → succeeded
@@ -347,12 +354,20 @@ al loop como resultado explícito.
 
 ### Telegram: entrega y polling
 
-El baseline v0 es únicamente saliente: la tool usa `sendMessage` y no consume
-`getUpdates`. Por eso el scaffold actual no puede competir con producción por
-el long polling ni provocar el `409 Conflict` de Telegram.
+El runtime usa `getUpdates` con long polling acotado, `limit=100`,
+`allowed_updates=["message"]` y offset durable en MongoDB. Cada update se
+confirma avanzando a `update_id + 1` únicamente después de procesarlo. El bot
+acepta mensajes privados de IDs activos registrados en `Telegram AI`; tenant,
+actor y rol se obtienen del registro server-side y nunca del mensaje. Antes de
+cada uso también se comprueba que el tenant y el administrador u operador
+vinculado continúen activos.
 
-La política queda preparada y protegida por tests para cualquier proyecto que
-agregue un adaptador entrante:
+Los mensajes crean runs del mismo runtime durable usado por HTTP, conservan una
+conversación por chat, admiten `/status <run-id>` y `/cancel <run-id>`, y
+entregan la respuesta final de forma idempotente. Las confirmations críticas se
+notifican por Telegram y se resuelven desde el backoffice.
+
+Política operativa:
 
 ```text
 bun run dev                         → polling false
@@ -361,12 +376,24 @@ bun run start / ./run-all.sh        → polling true, producción
 ejecución directa del entrypoint    → polling false por defecto
 ```
 
-`run-dev-all.sh` invoca `dev`, por lo que nunca habilita polling. Un futuro
-runtime de Telegram debe mantener el HTTP independiente, reportar
-`telegram.enabled=false` y `state=disabled` en local, degradar health sin
-derribar el listener y reintentar fallos de polling con backoff de 1 a 30
-segundos. El token nunca se registra. Se recomienda un token exclusivo para
-desarrollo incluso cuando se usa el opt-in.
+`run-dev-all.sh` invoca `dev`, por lo que nunca habilita polling. Health reporta
+`telegram.enabled=false` y `state=disabled` en local; en producción degrada sin
+derribar el listener y reintenta fallos, incluido `409 Conflict`, con backoff de
+1 a 30 segundos. El token nunca se registra.
+
+Telegram no permite usar `getUpdates` mientras existe un webhook configurado.
+El scaffold no elimina webhooks automáticamente: se debe elegir un único modo
+operativo. Se recomienda un token exclusivo para desarrollo incluso al usar el
+opt-in.
+
+### Interfaces del backoffice
+
+- `Agente AI`: interfaz HTTP con selección explícita de tenant para
+  administradores de plataforma, conversación durable, estado, cancelación,
+  replay y confirmations.
+- `Telegram AI`: CRUD de IDs de usuario autorizados. Un ID es globalmente único,
+  se liga al tenant y al actor autenticado que lo crea, y puede quedar activo o
+  inactivo con control optimista de versión.
 
 ## 13. Uploads y artifacts
 

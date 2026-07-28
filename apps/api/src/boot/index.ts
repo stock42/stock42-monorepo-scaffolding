@@ -8,6 +8,10 @@ import { AuthService } from "@/modules/auth/services/AuthService";
 import { OperatorStorage } from "@/modules/operators/services/OperatorStorage";
 import { TenancyService } from "@/modules/tenants/services/TenancyService";
 import { TenantStorage } from "@/modules/tenants/services/TenantStorage";
+import {
+  TELEGRAM_AI_ACCESS_COLLECTION,
+  TelegramAiAccessStorage,
+} from "@/modules/telegram-ai/services/TelegramAiAccessStorage";
 import { UserStorage } from "@/modules/users/services/UserStorage";
 import { RateLimiter } from "@/security/rate-limit";
 import { WebSocketGateway } from "@/websocket/WebSocketGateway";
@@ -51,6 +55,9 @@ export async function runBoot(config: ApiConfig): Promise<AppContext> {
   const tenants = new TenantStorage(mongo.getCollection("tenants"));
   const operators = new OperatorStorage(mongo.getCollection("operators"));
   const users = new UserStorage(mongo.getCollection("users"));
+  const telegramAiAccess = new TelegramAiAccessStorage(
+    mongo.getCollection(TELEGRAM_AI_ACCESS_COLLECTION),
+  );
   const audit = new AuditService(mongo.getCollection("audit_events"));
   const tickets = new WebSocketTicketService(mongo.getCollection("websocket_tickets"), config);
   const agentClient = new AgentClient(config.agent);
@@ -62,7 +69,7 @@ export async function runBoot(config: ApiConfig): Promise<AppContext> {
   const context: AppContext = {
     config,
     mongo,
-    storages: { administrators, tenants, operators, users },
+    storages: { administrators, tenants, operators, users, telegramAiAccess },
     auth,
     tenancy,
     audit,
@@ -82,6 +89,7 @@ export async function runBoot(config: ApiConfig): Promise<AppContext> {
     await tenants.ensureIndexes();
     await operators.ensureIndexes();
     await users.ensureIndexes();
+    await telegramAiAccess.ensureIndexes();
     await audit.ensureIndexes();
     await tickets.ensureIndexes();
   });

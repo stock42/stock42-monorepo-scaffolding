@@ -24,10 +24,11 @@ bun run test
 bun run boundaries
 ```
 
-La integración Telegram v0 es saliente (`sendMessage`) y no consume
-`getUpdates`. El desarrollo mantiene el polling deshabilitado; si un proyecto
-agrega un adaptador entrante, el opt-in local es
-`bun run --cwd apps/agent dev:telegram`, mientras `run-all.sh` conserva el modo
+El agente se puede invocar desde el módulo `Agente AI` del backoffice por HTTP
+y desde Telegram mediante `getUpdates`. Los IDs autorizados se administran con
+el CRUD `Telegram AI` y quedan ligados a un tenant y actor en MongoDB. El
+desarrollo mantiene el polling deshabilitado; el opt-in local es
+`bun run --cwd apps/agent dev:telegram`, mientras `run-all.sh` usa el modo
 productivo.
 
 Consulta [GUIDE.md](./GUIDE.md) para configuración, arquitectura, seguridad,

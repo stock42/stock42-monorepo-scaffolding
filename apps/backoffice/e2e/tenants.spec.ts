@@ -13,4 +13,8 @@ test("un administrador accede al directorio de tenants", async ({ page }) => {
   await expect(page).toHaveURL(/\/dashboard$/);
   await page.getByRole("link", { name: "Tenants" }).click();
   await expect(page.getByRole("heading", { name: "Directorio de tenants" })).toBeVisible();
+  await page.goto("/agent");
+  await expect(page.getByRole("heading", { name: "Asistente operativo" })).toBeVisible();
+  await page.goto("/telegram-ai");
+  await expect(page.getByRole("heading", { name: "Telegram AI", exact: true })).toBeVisible();
 });

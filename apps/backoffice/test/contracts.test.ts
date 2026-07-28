@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { BackofficeAgentRunInputSchema } from "@stock42/contracts/agent";
+import { CreateTelegramAiAccessInputSchema } from "@stock42/contracts/telegram-ai";
 import { CreateTenantInputSchema } from "@stock42/contracts/tenancy";
 
 describe("backoffice contracts", () => {
@@ -9,5 +11,24 @@ describe("backoffice contracts", () => {
         slug: "acme",
       }).success,
     ).toBe(false);
+  });
+
+  test("requires a tenant on the HTTP agent surface", () => {
+    expect(
+      BackofficeAgentRunInputSchema.safeParse({
+        task: "Estado del tenant",
+        idempotencyKey: crypto.randomUUID(),
+      }).success,
+    ).toBe(false);
+  });
+
+  test("validates Telegram AI access creation", () => {
+    expect(
+      CreateTelegramAiAccessInputSchema.safeParse({
+        tenantId: crypto.randomUUID(),
+        telegramUserId: "987654321",
+        label: "Owner",
+      }).success,
+    ).toBe(true);
   });
 });

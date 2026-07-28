@@ -1,24 +1,31 @@
 import { createHash } from "node:crypto";
 import type { AgentConfig } from "@/config";
 import type { AgentStore, DeliveryDocument } from "@/runtime/store/AgentStore";
+import { sanitizedTelegramError, TelegramClient } from "@/telegram/TelegramClient";
 
 export class TelegramService {
+  private readonly client: TelegramClient;
+
   constructor(
     private readonly config: AgentConfig,
     private readonly store: AgentStore,
-  ) {}
+    client?: TelegramClient,
+  ) {
+    this.client = client ?? new TelegramClient(config);
+  }
 
   async send(input: {
     tenantId: string;
     runId: string;
     chatId: string;
     text: string;
+    idempotencyKey?: string;
   }): Promise<{ deliveryId: string; externalId: string }> {
-    if (!this.config.telegramBotToken) {
+    if (!this.config.telegram.botToken) {
       throw new Error("Telegram no está configurado.");
     }
     const idempotencyKey = createHash("sha256")
-      .update(`${input.runId}:${input.chatId}:${input.text}`)
+      .update(input.idempotencyKey ?? `${input.runId}:${input.chatId}:${input.text}`)
       .digest("hex");
     const existing = await this.store.deliveriesCollection.findOne({
       tenantId: input.tenantId,
@@ -47,28 +54,10 @@ export class TelegramService {
     if (!existing) await this.store.deliveriesCollection.insertOne(delivery);
 
     let lastError = "Telegram delivery failed";
-    for (let attempt = delivery.attempts + 1; attempt <= 3; attempt += 1) {
+    const lastAttempt = delivery.attempts + 3;
+    for (let attempt = delivery.attempts + 1; attempt <= lastAttempt; attempt += 1) {
       try {
-        const response = await fetch(
-          `https://api.telegram.org/bot${this.config.telegramBotToken}/sendMessage`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ chat_id: input.chatId, text: input.text }),
-            signal: AbortSignal.timeout(10_000),
-          },
-        );
-        const payload: unknown = await response.json();
-        const externalId =
-          typeof payload === "object" &&
-          payload !== null &&
-          "result" in payload &&
-          typeof payload.result === "object" &&
-          payload.result !== null &&
-          "message_id" in payload.result
-            ? String(payload.result.message_id)
-            : null;
-        if (!response.ok || !externalId) throw new Error("Telegram rejected delivery");
+        const externalId = await this.client.sendMessage(input.chatId, input.text);
         await this.store.deliveriesCollection.updateOne(
           { uuid: delivery.uuid },
           {
@@ -83,7 +72,11 @@ export class TelegramService {
         );
         return { deliveryId: delivery.uuid, externalId };
       } catch (cause) {
-        lastError = cause instanceof Error ? cause.message : "Telegram delivery failed";
+        lastError = sanitizedTelegramError(
+          cause,
+          this.config.telegram.botToken,
+          "Telegram delivery failed",
+        );
         await this.store.deliveriesCollection.updateOne(
           { uuid: delivery.uuid },
           {

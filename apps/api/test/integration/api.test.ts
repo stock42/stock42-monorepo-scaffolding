@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { AuthResponseSchema, CsrfResponseSchema } from "@stock42/contracts/auth";
 import {
+  TelegramAiAccessListResponseSchema,
+  TelegramAiAccessResponseSchema,
+} from "@stock42/contracts/telegram-ai";
+import {
   OperatorListResponseSchema,
   OperatorResponseSchema,
   TenantListResponseSchema,
@@ -59,7 +63,7 @@ async function mutate(
   jar: CookieJar,
   path: string,
   body?: unknown,
-  method: "POST" | "PATCH" = "POST",
+  method: "POST" | "PATCH" | "DELETE" = "POST",
 ): Promise<Response> {
   return fetch(new URL(path, baseUrl), {
     method,
@@ -111,14 +115,21 @@ describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
       throw new Error("Cleanup bloqueado: testRunId inválido.");
     }
     const db = getAppContext().mongo.getDB();
-    for (const collection of ["administrators", "tenants", "operators", "users", "audit_events"]) {
+    for (const collection of [
+      "administrators",
+      "tenants",
+      "operators",
+      "users",
+      "agent_telegram_access",
+      "audit_events",
+    ]) {
       await db.collection(collection).deleteMany({ testRunId });
     }
     await db.collection("websocket_tickets").deleteMany({ testRunId });
     await running.close();
   });
 
-  test("covers health, auth, tenancy, actor isolation and one-use WS tickets", async () => {
+  test("covers health, auth, tenancy, Telegram AI CRUD, isolation and WS tickets", async () => {
     const baseUrl = running?.server.url;
     if (!baseUrl) throw new Error("API no iniciada.");
 
@@ -236,6 +247,58 @@ describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
       { status: "active", expectedVersion: 2 },
       "PATCH",
     );
+
+    const telegramAccessResponse = await mutate(baseUrl, adminJar, "/telegram-ai/access/create", {
+      tenantId: tenant.uuid,
+      telegramUserId: `${Date.now()}${Math.floor(Math.random() * 100_000)
+        .toString()
+        .padStart(5, "0")}`,
+      label: "API Test Telegram",
+    });
+    expect(telegramAccessResponse.status).toBe(201);
+    const telegramAccess = TelegramAiAccessResponseSchema.parse(
+      await jsonBody(telegramAccessResponse),
+    ).data;
+    await getAppContext()
+      .mongo.getDB()
+      .collection("agent_telegram_access")
+      .updateOne({ uuid: telegramAccess.uuid }, { $set: { testRunId } });
+    const telegramList = TelegramAiAccessListResponseSchema.parse(
+      await jsonBody(
+        await fetch(new URL(`/telegram-ai/access?tenantId=${tenant.uuid}&limit=100`, baseUrl), {
+          headers: { cookie: adminJar.header() },
+        }),
+      ),
+    );
+    expect(telegramList.data.items.some((item) => item.uuid === telegramAccess.uuid)).toBe(true);
+    const telegramUpdated = await mutate(
+      baseUrl,
+      adminJar,
+      `/telegram-ai/access/${telegramAccess.uuid}/update`,
+      {
+        tenantId: tenant.uuid,
+        label: "API Test Telegram actualizado",
+        status: "inactive",
+        expectedVersion: telegramAccess.version,
+      },
+      "PATCH",
+    );
+    const updatedTelegramAccess = TelegramAiAccessResponseSchema.parse(
+      await jsonBody(telegramUpdated),
+    ).data;
+    expect(updatedTelegramAccess.status).toBe("inactive");
+    const telegramDeleted = await mutate(
+      baseUrl,
+      adminJar,
+      `/telegram-ai/access/${telegramAccess.uuid}`,
+      {
+        tenantId: tenant.uuid,
+        expectedVersion: updatedTelegramAccess.version,
+      },
+      "DELETE",
+    );
+    expect(telegramDeleted.status).toBe(200);
+    await markFixtures(tenant.uuid, [telegramAccess.uuid]);
 
     const userJar = new CookieJar();
     const userLoginResponse = await fetch(new URL("/auth/login", baseUrl), {

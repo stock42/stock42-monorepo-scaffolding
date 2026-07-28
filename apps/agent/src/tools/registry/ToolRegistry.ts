@@ -43,7 +43,7 @@ export class ToolRegistry {
         actorRole: z.string(),
       }),
       actionClass: "read",
-      allowedRoles: ["tenant_owner", "tenant_operator", "tenant_user"],
+      allowedRoles: ["platform_admin", "tenant_owner", "tenant_operator", "tenant_user"],
       timeoutMs: 1_000,
       idempotent: true,
       execute: async (_input, context) => ({
@@ -67,7 +67,7 @@ export class ToolRegistry {
         size: z.number().int().nonnegative(),
       }),
       actionClass: "write",
-      allowedRoles: ["tenant_owner", "tenant_operator", "tenant_user"],
+      allowedRoles: ["platform_admin", "tenant_owner", "tenant_operator", "tenant_user"],
       timeoutMs: 10_000,
       idempotent: false,
       execute: async (input, context) => {
@@ -110,7 +110,7 @@ export class ToolRegistry {
         size: z.number().int().nonnegative(),
       }),
       actionClass: "write",
-      allowedRoles: ["tenant_owner", "tenant_operator", "tenant_user"],
+      allowedRoles: ["platform_admin", "tenant_owner", "tenant_operator", "tenant_user"],
       timeoutMs: 15_000,
       idempotent: false,
       execute: async (input, context) => {
@@ -167,7 +167,7 @@ export class ToolRegistry {
         sha256: z.string(),
       }),
       actionClass: "read",
-      allowedRoles: ["tenant_owner", "tenant_operator", "tenant_user"],
+      allowedRoles: ["platform_admin", "tenant_owner", "tenant_operator", "tenant_user"],
       timeoutMs: 3_000,
       idempotent: true,
       execute: async (input, context) => {
@@ -198,7 +198,7 @@ export class ToolRegistry {
         ),
       }),
       actionClass: "read",
-      allowedRoles: ["tenant_owner", "tenant_operator", "tenant_user"],
+      allowedRoles: ["platform_admin", "tenant_owner", "tenant_operator", "tenant_user"],
       timeoutMs: 3_000,
       idempotent: true,
       execute: async (_input, context) => ({
@@ -225,7 +225,7 @@ export class ToolRegistry {
         externalId: z.string(),
       }),
       actionClass: "critical",
-      allowedRoles: ["tenant_owner", "tenant_operator"],
+      allowedRoles: ["platform_admin", "tenant_owner", "tenant_operator"],
       timeoutMs: 35_000,
       idempotent: true,
       execute: async (input, context) =>

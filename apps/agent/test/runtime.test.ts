@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { loadAgentConfig } from "@/config";
+import { startInternalServer } from "@/http/server";
 import { createAssistantManifest } from "@/runtime/contracts/manifest";
 import type { AgentStore } from "@/runtime/store/AgentStore";
+import { TelegramApiError, TelegramClient } from "@/telegram/TelegramClient";
 import { ToolRegistry } from "@/tools/registry/ToolRegistry";
 
 function testConfig(overrides: Record<string, string | undefined> = {}) {
@@ -44,8 +46,8 @@ describe("durable agent baseline", () => {
   });
 
   test("keeps Telegram polling disabled unless explicitly enabled", () => {
-    expect(testConfig().telegramPollingEnabled).toBe(false);
-    expect(testConfig({ TELEGRAM_POLLING_ENABLED: "true" }).telegramPollingEnabled).toBe(true);
+    expect(testConfig().telegram.pollingEnabled).toBe(false);
+    expect(testConfig({ TELEGRAM_POLLING_ENABLED: "true" }).telegram.pollingEnabled).toBe(true);
   });
 
   test("separates local and production Telegram polling scripts", async () => {
@@ -61,11 +63,84 @@ describe("durable agent baseline", () => {
     );
   });
 
-  test("keeps the v0 Telegram integration outbound-only", async () => {
-    const source = await Bun.file(
-      new URL("../src/tools/telegram/TelegramService.ts", import.meta.url),
-    ).text();
-    expect(source).toContain("/sendMessage");
-    expect(source).not.toContain("/getUpdates");
+  test("reports Telegram disabled without degrading local HTTP health", async () => {
+    const config = { ...testConfig(), port: 0 };
+    const store = {
+      telegramRuntimeStatus: async () => null,
+    } as unknown as AgentStore;
+    const server = startInternalServer(config, store, new ToolRegistry(config, store));
+    try {
+      const response = await fetch(new URL("/internal/health/live", server.url));
+      const payload = (await response.json()) as {
+        data: {
+          status: string;
+          telegram: { enabled: boolean; state: string; running: boolean };
+        };
+      };
+      expect(response.status).toBe(200);
+      expect(payload.data.status).toBe("ok");
+      expect(payload.data.telegram).toEqual({
+        enabled: false,
+        state: "disabled",
+        running: false,
+      });
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test("calls getUpdates with a durable offset and bounded long polling", async () => {
+    let requestBody: Record<string, unknown> = {};
+    const client = new TelegramClient(testConfig({ TELEGRAM_BOT_TOKEN: "test-token" }), (async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({
+        ok: true,
+        result: [
+          {
+            update_id: 41,
+            message: {
+              message_id: 7,
+              date: 1_700_000_000,
+              text: "hola",
+              from: { id: 123, is_bot: false },
+              chat: { id: 123, type: "private" },
+            },
+          },
+        ],
+      });
+    }) as unknown as typeof fetch);
+
+    const updates = await client.getUpdates({ offset: 41, timeoutSeconds: 25 });
+    expect(updates[0]?.update_id).toBe(41);
+    expect(requestBody).toEqual({
+      offset: 41,
+      limit: 100,
+      timeout: 25,
+      allowed_updates: ["message"],
+    });
+  });
+
+  test("surfaces Telegram 409 without exposing the bot URL", async () => {
+    const client = new TelegramClient(testConfig({ TELEGRAM_BOT_TOKEN: "test-token" }), (async () =>
+      Response.json(
+        {
+          ok: false,
+          error_code: 409,
+          description: "Conflict for test-token: terminated by other getUpdates request",
+        },
+        { status: 409 },
+      )) as unknown as typeof fetch);
+
+    try {
+      await client.getUpdates({ offset: 0, timeoutSeconds: 25 });
+      throw new Error("Se esperaba TelegramApiError.");
+    } catch (cause) {
+      expect(cause).toBeInstanceOf(TelegramApiError);
+      expect((cause as TelegramApiError).code).toBe(409);
+      expect((cause as Error).message).not.toContain("test-token");
+    }
   });
 });

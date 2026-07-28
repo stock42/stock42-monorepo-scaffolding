@@ -29,6 +29,36 @@ function publicError(status: number, message: string): Response {
   );
 }
 
+async function telegramHealth(config: AgentConfig, store: AgentStore) {
+  if (!config.telegram.pollingEnabled) {
+    return { enabled: false, state: "disabled", running: false };
+  }
+  const status = await store.telegramRuntimeStatus();
+  if (!status) {
+    return {
+      enabled: true,
+      state: "degraded",
+      running: false,
+      restartCount: 0,
+      lastError: "El supervisor todavía no publicó estado.",
+    };
+  }
+  const staleAfterMs =
+    config.telegram.pollTimeoutSeconds * 1_000 + config.telegram.backoffMaxMs + 10_000;
+  const stale =
+    !status.heartbeatAt || Date.now() - new Date(status.heartbeatAt).getTime() > staleAfterMs;
+  return {
+    enabled: true,
+    state: stale ? "degraded" : status.state,
+    running: status.running && !stale,
+    restartCount: status.restartCount,
+    lastUpdateAt: status.lastUpdateAt,
+    lastErrorAt: status.lastErrorAt,
+    lastError: stale ? "El heartbeat de Telegram está vencido." : status.lastError,
+    nextRetryAt: status.nextRetryAt,
+  };
+}
+
 export function startInternalServer(
   config: AgentConfig,
   store: AgentStore,
@@ -42,7 +72,15 @@ export function startInternalServer(
     async fetch(request) {
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/internal/health/live") {
-        return json({ ok: true, data: { status: "live" } });
+        const telegram = await telegramHealth(config, store);
+        return json({
+          ok: true,
+          data: {
+            status:
+              telegram.state === "disabled" || telegram.state === "polling" ? "ok" : "degraded",
+            telegram,
+          },
+        });
       }
 
       const body = new Uint8Array(await request.arrayBuffer());
@@ -55,7 +93,18 @@ export function startInternalServer(
 
       try {
         if (request.method === "GET" && url.pathname === "/internal/health/ready") {
-          return json({ ok: true, data: { status: "ready", mongodb: "ready" } });
+          const telegram = await telegramHealth(config, store);
+          return json({
+            ok: true,
+            data: {
+              status:
+                telegram.state === "disabled" || telegram.state === "polling"
+                  ? "ready"
+                  : "degraded",
+              mongodb: "ready",
+              telegram,
+            },
+          });
         }
 
         if (request.method === "POST" && url.pathname === "/internal/runs") {

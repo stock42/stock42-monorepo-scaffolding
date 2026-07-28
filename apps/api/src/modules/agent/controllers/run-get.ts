@@ -1,7 +1,7 @@
 import { getAppContext } from "@/context";
-import { HttpError } from "@/errors/HttpError";
 import { controller } from "@/http/controller";
 import { authenticatedRequest } from "@/security/request";
+import { resolveAgentTenant } from "../tenant-context";
 
 export default controller({
   name: "agent.run.get",
@@ -11,12 +11,8 @@ export default controller({
   async handler(request, response) {
     const context = getAppContext();
     const { actor } = await authenticatedRequest(request);
-    if (!actor.tenantId) throw new HttpError(403, "FORBIDDEN", "Tenant requerido.");
-    const result = await context.agentClient.getRun(
-      request.params.id ?? "",
-      actor.tenantId,
-      actor.uuid,
-    );
+    const tenantId = resolveAgentTenant(actor, request.query.tenantId);
+    const result = await context.agentClient.getRun(request.params.id ?? "", tenantId, actor.uuid);
     return response.json(result);
   },
 });

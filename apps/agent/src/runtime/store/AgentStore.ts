@@ -5,6 +5,11 @@ import {
   type AgentRunStatus,
   type InternalRunEnvelope,
 } from "@stock42/contracts/agent";
+import {
+  TELEGRAM_AI_ACCESS_COLLECTION,
+  TelegramAiAccessSchema,
+  type TelegramAiAccess,
+} from "@stock42/contracts/telegram-ai";
 import { MongoClient, MongoServerError, type Collection, type Db, type WithId } from "mongodb";
 import type { AgentConfig } from "@/config";
 import type {
@@ -64,6 +69,32 @@ export type DeliveryDocument = {
   externalId: string | null;
   attempts: number;
   lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TelegramRuntimeDocument = {
+  uuid: "telegram-polling";
+  enabled: boolean;
+  state: "disabled" | "starting" | "polling" | "degraded" | "stopped";
+  running: boolean;
+  offset: number;
+  restartCount: number;
+  heartbeatAt: string | null;
+  lastUpdateAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  nextRetryAt: string | null;
+  updatedAt: string;
+};
+
+type TelegramSessionDocument = {
+  uuid: string;
+  transport: "telegram";
+  tenantId: string;
+  actorId: string;
+  externalChatId: string;
+  conversationId: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -130,6 +161,10 @@ export class AgentStore {
         { status: 1, heartbeatAt: 1, deadlineAt: 1 },
         { name: "runs_supervision" },
       ),
+      this.runs.createIndex(
+        { telegramDeliveryStatus: 1, status: 1, updatedAt: -1 },
+        { name: "runs_telegram_delivery" },
+      ),
       this.events.createIndex(
         { runId: 1, sequence: 1 },
         { unique: true, name: "events_run_sequence_unique" },
@@ -162,6 +197,14 @@ export class AgentStore {
       this.deliveries.createIndex(
         { tenantId: 1, idempotencyKey: 1 },
         { unique: true, name: "deliveries_tenant_idempotency_unique" },
+      ),
+      this.telegramSessions.createIndex(
+        { transport: 1, tenantId: 1, externalChatId: 1 },
+        { unique: true, name: "telegram_sessions_tenant_chat_unique" },
+      ),
+      this.telegramRuntime.createIndex(
+        { uuid: 1 },
+        { unique: true, name: "telegram_runtime_uuid_unique" },
       ),
     ]);
   }
@@ -204,6 +247,8 @@ export class AgentStore {
       cancelRequestedAt: null,
       terminationRequestedAt: null,
       retryLimit: 1,
+      telegramDeliveryStatus: envelope.request.metadata.channel === "telegram" ? "pending" : null,
+      telegramConfirmationNotifiedId: null,
     };
 
     try {
@@ -603,6 +648,139 @@ export class AgentStore {
     );
   }
 
+  async findActiveTelegramAccess(telegramUserId: string): Promise<TelegramAiAccess | null> {
+    const document = await this.telegramAccess.findOne({
+      telegramUserId,
+      status: "active",
+    });
+    if (!document) return null;
+    const access = TelegramAiAccessSchema.parse(withoutMongoId(document));
+    const tenant = await this.database.collection("tenants").findOne({
+      uuid: access.tenantId,
+      status: "active",
+    });
+    if (!tenant) return null;
+
+    if (access.actorRole === "platform_admin") {
+      const administrator = await this.database.collection("administrators").findOne({
+        uuid: access.actorId,
+        status: "active",
+      });
+      return administrator ? access : null;
+    }
+
+    const operator = await this.database.collection("operators").findOne({
+      uuid: access.actorId,
+      tenantId: access.tenantId,
+      status: "active",
+      role: access.actorRole === "tenant_owner" ? "owner" : "operator",
+    });
+    return operator ? access : null;
+  }
+
+  async telegramConversation(access: TelegramAiAccess, externalChatId: string): Promise<string> {
+    const now = new Date().toISOString();
+    const conversationId = crypto.randomUUID();
+    const session = await this.telegramSessions.findOneAndUpdate(
+      {
+        transport: "telegram",
+        tenantId: access.tenantId,
+        externalChatId,
+      },
+      {
+        $setOnInsert: {
+          uuid: crypto.randomUUID(),
+          transport: "telegram",
+          tenantId: access.tenantId,
+          externalChatId,
+          conversationId,
+          createdAt: now,
+        },
+        $set: {
+          actorId: access.actorId,
+          updatedAt: now,
+        },
+      },
+      { upsert: true, returnDocument: "after" },
+    );
+    if (!session) throw new Error("No fue posible crear la sesión Telegram.");
+    return session.conversationId;
+  }
+
+  async telegramOffset(): Promise<number> {
+    return (await this.telegramRuntime.findOne({ uuid: "telegram-polling" }))?.offset ?? 0;
+  }
+
+  async advanceTelegramOffset(offset: number): Promise<void> {
+    await this.ensureTelegramRuntimeDocument();
+    const now = new Date().toISOString();
+    await this.telegramRuntime.updateOne(
+      { uuid: "telegram-polling" },
+      {
+        $max: { offset },
+        $set: { updatedAt: now, lastUpdateAt: now },
+      },
+    );
+  }
+
+  async setTelegramRuntimeStatus(
+    updates: Partial<Omit<TelegramRuntimeDocument, "uuid" | "offset" | "updatedAt">>,
+  ): Promise<void> {
+    await this.ensureTelegramRuntimeDocument();
+    const now = new Date().toISOString();
+    await this.telegramRuntime.updateOne(
+      { uuid: "telegram-polling" },
+      { $set: { ...updates, updatedAt: now } },
+    );
+  }
+
+  async telegramRuntimeStatus(): Promise<TelegramRuntimeDocument | null> {
+    const document = await this.telegramRuntime.findOne({ uuid: "telegram-polling" });
+    return document ? withoutMongoId(document) : null;
+  }
+
+  async telegramRunsForDelivery(): Promise<RunDocument[]> {
+    return this.runs
+      .find({
+        "input.metadata.channel": "telegram",
+        telegramDeliveryStatus: "pending",
+        status: {
+          $in: ["waiting", "succeeded", "failed", "cancelled", "timed_out", "killed", "crashed"],
+        },
+      })
+      .sort({ updatedAt: -1 })
+      .limit(100)
+      .toArray();
+  }
+
+  async pendingConfirmation(runId: string): Promise<ConfirmationDocument | null> {
+    return this.confirmations.findOne({ runId, status: "pending" });
+  }
+
+  async markTelegramConfirmationNotified(runId: string, confirmationId: string): Promise<void> {
+    await this.runs.updateOne(
+      { uuid: runId, telegramDeliveryStatus: "pending" },
+      {
+        $set: {
+          telegramConfirmationNotifiedId: confirmationId,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    );
+  }
+
+  async completeTelegramDelivery(runId: string, status: "sent" | "revoked"): Promise<void> {
+    await this.runs.updateOne(
+      { uuid: runId, telegramDeliveryStatus: "pending" },
+      {
+        $set: {
+          telegramDeliveryStatus: status,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    );
+  }
+
   toPublicRun(run: RunDocument): AgentRun {
     return AgentRunSchema.parse(run);
   }
@@ -658,5 +836,41 @@ export class AgentStore {
 
   private get deliveries(): Collection<DeliveryDocument> {
     return this.database.collection("agent_deliveries");
+  }
+
+  private get telegramAccess(): Collection<TelegramAiAccess> {
+    return this.database.collection(TELEGRAM_AI_ACCESS_COLLECTION);
+  }
+
+  private get telegramSessions(): Collection<TelegramSessionDocument> {
+    return this.database.collection("agent_telegram_sessions");
+  }
+
+  private get telegramRuntime(): Collection<TelegramRuntimeDocument> {
+    return this.database.collection("agent_telegram_runtime");
+  }
+
+  private async ensureTelegramRuntimeDocument(): Promise<void> {
+    const now = new Date().toISOString();
+    await this.telegramRuntime.updateOne(
+      { uuid: "telegram-polling" },
+      {
+        $setOnInsert: {
+          uuid: "telegram-polling",
+          enabled: false,
+          state: "disabled",
+          running: false,
+          offset: 0,
+          restartCount: 0,
+          heartbeatAt: null,
+          lastUpdateAt: null,
+          lastErrorAt: null,
+          lastError: null,
+          nextRetryAt: null,
+          updatedAt: now,
+        },
+      },
+      { upsert: true },
+    );
   }
 }

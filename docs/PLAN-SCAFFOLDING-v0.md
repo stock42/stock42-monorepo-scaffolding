@@ -1149,22 +1149,25 @@ MongoDB. Las tools son operaciones de dominio acotadas.
 La integración inicial contempla:
 
 - envío de mensajes;
+- recepción mediante `getUpdates`;
+- offset durable confirmado con `update_id + 1`;
+- CRUD backoffice de IDs autorizados por tenant y actor;
 - entrega idempotente;
 - reintentos acotados;
 - registro del identificador externo;
 - redacción de token en logs;
 - clasificación write o critical según el destino y contenido.
 
-El baseline v0 es saliente y no ejecuta `getUpdates`. Si un proyecto agrega un
-adaptador entrante, la ejecución directa y `dev` mantienen
-`TELEGRAM_POLLING_ENABLED=false`; `dev:telegram` es el opt-in local y `start`
-lo fuerza a `true` para producción. El polling debe tener lifecycle separado
-del HTTP, health `disabled`/`degraded`, reintentos con backoff de 1 a 30 segundos
-y cleanup de procesos. Un fallo o `409 Conflict` de Telegram nunca debe apagar
-el listener HTTP.
+La ejecución directa y `dev` mantienen `TELEGRAM_POLLING_ENABLED=false`;
+`dev:telegram` es el opt-in local y `start` lo fuerza a `true` para producción.
+El polling tiene lifecycle separado del HTTP, health `disabled`/`degraded`,
+reintentos con backoff de 1 a 30 segundos y cleanup de procesos. Un fallo o
+`409 Conflict` de Telegram nunca apaga el listener HTTP.
 
-No se incluye un webhook público genérico sin autenticación. Es recomendable
-usar un token exclusivo para desarrollo y nunca compartir el token productivo.
+No se incluye un webhook público genérico sin autenticación ni se elimina un
+webhook existente automáticamente. `getUpdates` y webhook son modos mutuamente
+excluyentes. Es recomendable usar un token exclusivo para desarrollo y nunca
+compartir el token productivo.
 
 ### 18.5 PDF y CSV
 
@@ -1785,6 +1788,8 @@ Criterios de aceptación:
 - una acción critical no ejecuta antes de aprobación;
 - aprobar no cambia argumentos;
 - Telegram es idempotente;
+- `getUpdates` solo acepta IDs activos administrados en `Telegram AI`;
+- el agente del backoffice funciona por HTTP con tenant explícito;
 - artifacts no están en base64 en Mongo;
 - path traversal, MIME y tamaño tienen tests.
 

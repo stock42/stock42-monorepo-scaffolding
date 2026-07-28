@@ -1,8 +1,9 @@
-import { CreateAgentRunInputSchema } from "@stock42/contracts/agent";
+import { BackofficeAgentRunInputSchema, CreateAgentRunInputSchema } from "@stock42/contracts/agent";
 import { getAppContext } from "@/context";
 import { HttpError } from "@/errors/HttpError";
 import { controller } from "@/http/controller";
 import { authenticatedRequest } from "@/security/request";
+import { resolveAgentTenant } from "../tenant-context";
 
 export default controller({
   name: "agent.run.create",
@@ -12,17 +13,20 @@ export default controller({
   async handler(request, response) {
     const context = getAppContext();
     const { actor } = await authenticatedRequest(request, { csrf: true });
-    if (!actor.tenantId) {
-      throw new HttpError(403, "FORBIDDEN", "La ejecución requiere un tenant.");
+    const scoped = BackofficeAgentRunInputSchema.safeParse(request.body);
+    const tenantId = resolveAgentTenant(actor, scoped.success ? scoped.data.tenantId : undefined);
+    const input = CreateAgentRunInputSchema.parse(request.body);
+    const tenant = await context.storages.tenants.findByUuid(tenantId);
+    if (!tenant || tenant.toPublic().status !== "active") {
+      throw new HttpError(404, "NOT_FOUND", "Tenant activo no encontrado.");
     }
     context.rateLimiter.consume(
-      `agent:${actor.tenantId}:${actor.uuid}`,
+      `agent:${tenantId}:${actor.uuid}`,
       context.config.rateLimit.agentRequests,
       context.config.rateLimit.windowSeconds,
     );
-    const input = CreateAgentRunInputSchema.parse(request.body);
     const result = await context.agentClient.createRun({
-      tenantId: actor.tenantId,
+      tenantId,
       actorId: actor.uuid,
       actorRole: actor.role,
       request: input,
