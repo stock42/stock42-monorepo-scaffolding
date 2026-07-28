@@ -79,6 +79,11 @@ se informa el error exacto sin alterar credenciales.
   `Telegram AI`; nunca se confía en tenant, actor o rol enviados por Telegram.
 - No ejecutar `getUpdates` y webhook con el mismo bot. Un `409 Conflict` se
   degrada y reintenta sin terminar el servidor HTTP.
+- Los archivos de `nginx/` son virtual hosts autónomos que deben poder copiarse
+  individualmente al Nginx compartido de un servidor donde conviven otros
+  proyectos. No agregar un `nginx.conf` global, upstreams, snippets, directorios
+  de logs ni configuración que pretenda controlar toda la instalación salvo
+  pedido explícito.
 - Cuando una tarea cambie apps públicas, dominios, puertos, paths, WebSocket,
   health checks, timeouts, límites de body o headers de proxy, actualizar
   `nginx/` en la misma tarea.

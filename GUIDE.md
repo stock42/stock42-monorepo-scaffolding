@@ -460,24 +460,24 @@ mockea.
 
 ## 16. Nginx
 
-`nginx/` incluye un baseline HTTP completo:
+`nginx/` conserva cuatro virtual hosts autónomos basados en las configuraciones
+de referencia de VisionSanar:
 
 ```text
-example.com                 → 127.0.0.1:3000
-backoffice.example.com      → 127.0.0.1:3001
-api.example.com             → 127.0.0.1:4000
-apps/agent                  → no publicado
+example.com                 → 127.0.0.1:3740
+clinical.example.com        → 127.0.0.1:3741
+backoffice.example.com      → 127.0.0.1:3742
+api.example.com             → 127.0.0.1:5757
 ```
 
-`/ws` configura upgrade y timeouts; `/uploads/` desactiva request buffering.
-No hay certificados ni paths privados hardcodeados.
+Cada archivo puede copiarse individualmente a la ubicación de virtual hosts de
+una instalación Nginx existente donde conviven otros proyectos. El directorio
+no incluye ni reemplaza el `nginx.conf` global del servidor, y no declara
+upstreams, snippets, logs ni certificados compartidos.
 
-```bash
-sudo nginx -t -c "$PWD/nginx/nginx.conf" -p "$PWD/nginx"
-```
-
-Nginx valida también el `bind` de los listeners; el uso de `sudo` es necesario
-cuando el baseline conserva los puertos HTTP privilegiados.
+Después de copiar el archivo se usa el mecanismo de inclusión ya configurado en
+el servidor y se valida la instalación completa con `nginx -t` antes de
+recargarla. Estos ejemplos no asumen control sobre los demás proyectos.
 
 Todo cambio de dominio, puerto, path, WebSocket, upload, timeout, health o
 header de proxy exige actualizar Nginx.
