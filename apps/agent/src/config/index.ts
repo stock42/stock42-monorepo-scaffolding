@@ -76,7 +76,7 @@ const AgentConfigSchema = z
     },
     telegram: {
       botToken: value.TELEGRAM_BOT_TOKEN || undefined,
-      pollingEnabled: value.TELEGRAM_POLLING_ENABLED,
+      pollingEnabled: value.TELEGRAM_POLLING_ENABLED && Boolean(value.TELEGRAM_BOT_TOKEN),
       apiBaseUrl: value.TELEGRAM_API_BASE_URL,
       pollTimeoutSeconds: value.TELEGRAM_POLL_TIMEOUT_SECONDS,
       backoffMinMs: value.TELEGRAM_POLL_BACKOFF_MIN_MS,

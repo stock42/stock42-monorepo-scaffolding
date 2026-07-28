@@ -384,15 +384,17 @@ Política operativa:
 
 ```text
 bun run dev                         → polling false
-bun run dev:telegram                → polling true, opt-in local
-bun run start / ./run-all.sh        → polling true, producción
+bun run dev:telegram                → polling true con token, opt-in local
+bun run start / ./run-all.sh        → polling true con token, producción
 ejecución directa del entrypoint    → polling false por defecto
 ```
 
 `run-dev-all.sh` invoca `dev`, por lo que nunca habilita polling. Health reporta
-`telegram.enabled=false` y `state=disabled` en local; en producción degrada sin
-derribar el listener y reintenta fallos, incluido `409 Conflict`, con backoff de
-1 a 30 segundos. El token nunca se registra.
+`telegram.enabled=false` y `state=disabled` cuando el flag está apagado o
+`TELEGRAM_BOT_TOKEN` está ausente. Sin token no se inicia el proceso Telegram ni
+se programan reintentos. Con polling efectivo, un fallo degrada health sin
+derribar el listener y se reintenta, incluido `409 Conflict`, con backoff de 1 a
+30 segundos. El token nunca se registra.
 
 Telegram no permite usar `getUpdates` mientras existe un webhook configurado.
 El scaffold no elimina webhooks automáticamente: se debe elegir un único modo

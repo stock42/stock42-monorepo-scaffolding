@@ -67,6 +67,12 @@ El formato sigue una versión simplificada de
   las configuraciones Nginx de referencia con dominios `example.com`.
 - Se marcó `docs/PLAN-SCAFFOLDING-v0.md` como implementado.
 
+### Fixed
+
+- La ausencia de `TELEGRAM_BOT_TOKEN` ahora mantiene el polling de Telegram
+  deshabilitado aunque el script solicite habilitarlo; no se inicia el proceso
+  `getUpdates`, health informa `disabled` y no se generan reintentos ni backoff.
+
 ### Security
 
 - `getUpdates` queda aislado del proceso HTTP, conserva el default local

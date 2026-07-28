@@ -83,7 +83,7 @@ export class TelegramPollingRuntime {
   }
 
   async run(): Promise<void> {
-    if (!this.config.telegram.pollingEnabled) {
+    if (!this.config.telegram.pollingEnabled || !this.config.telegram.botToken) {
       await this.store.setTelegramRuntimeStatus({
         enabled: false,
         state: "disabled",
@@ -124,12 +124,6 @@ export class TelegramPollingRuntime {
     let backoffMs = this.config.telegram.backoffMinMs;
 
     while (!this.stopped) {
-      if (!this.config.telegram.botToken) {
-        await this.retry("TELEGRAM_BOT_TOKEN ausente.", backoffMs);
-        backoffMs = Math.min(backoffMs * 2, this.config.telegram.backoffMaxMs);
-        continue;
-      }
-
       try {
         await this.store.setTelegramRuntimeStatus({
           enabled: true,

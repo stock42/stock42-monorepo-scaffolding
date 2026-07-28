@@ -29,7 +29,8 @@ y desde Telegram mediante `getUpdates`. Los IDs autorizados se administran con
 el CRUD `Telegram AI` y quedan ligados a un tenant y actor en MongoDB. El
 desarrollo mantiene el polling deshabilitado; el opt-in local es
 `bun run --cwd apps/agent dev:telegram`, mientras `run-all.sh` usa el modo
-productivo.
+productivo. Ambos modos requieren `TELEGRAM_BOT_TOKEN`; si está ausente, el
+polling permanece deshabilitado y no reintenta.
 
 Consulta [GUIDE.md](./GUIDE.md) para configuración, arquitectura, seguridad,
 pruebas y despliegue. Las reglas obligatorias están en [AGENTS.md](./AGENTS.md).

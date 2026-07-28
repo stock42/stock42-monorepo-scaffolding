@@ -70,7 +70,9 @@ se informa el error exacto sin alterar credenciales.
 - El long polling de Telegram nunca se habilita por defecto en desarrollo ni
   en una ejecución directa: `dev` fuerza `TELEGRAM_POLLING_ENABLED=false`,
   `dev:telegram` es el opt-in local y `start` lo habilita para producción.
-  `run-dev-all.sh` usa `dev` y `run-all.sh` usa `start`.
+  `run-dev-all.sh` usa `dev` y `run-all.sh` usa `start`. En todos los modos,
+  la ausencia de `TELEGRAM_BOT_TOKEN` mantiene el polling deshabilitado, sin
+  iniciar el proceso Telegram ni programar reintentos.
 - La integración entrante de Telegram separa el lifecycle HTTP del polling,
   informa `disabled`/`degraded` en health y supervisa `getUpdates` con backoff
   acotado sin apagar el HTTP. Los IDs autorizados se administran en el módulo

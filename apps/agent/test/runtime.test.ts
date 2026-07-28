@@ -4,6 +4,7 @@ import { startInternalServer } from "@/http/server";
 import { createAssistantManifest } from "@/runtime/contracts/manifest";
 import type { AgentStore } from "@/runtime/store/AgentStore";
 import { TelegramApiError, TelegramClient } from "@/telegram/TelegramClient";
+import { TelegramPollingRuntime } from "@/telegram/TelegramPollingRuntime";
 import { ToolRegistry } from "@/tools/registry/ToolRegistry";
 
 function testConfig(overrides: Record<string, string | undefined> = {}) {
@@ -45,9 +46,35 @@ describe("durable agent baseline", () => {
     expect(tools.map((tool) => tool.name)).not.toContain("mongodb_aggregate");
   });
 
-  test("keeps Telegram polling disabled unless explicitly enabled", () => {
+  test("requires both the Telegram polling flag and bot token", () => {
     expect(testConfig().telegram.pollingEnabled).toBe(false);
-    expect(testConfig({ TELEGRAM_POLLING_ENABLED: "true" }).telegram.pollingEnabled).toBe(true);
+    expect(testConfig({ TELEGRAM_POLLING_ENABLED: "true" }).telegram.pollingEnabled).toBe(false);
+    expect(
+      testConfig({
+        TELEGRAM_POLLING_ENABLED: "true",
+        TELEGRAM_BOT_TOKEN: "test-token",
+      }).telegram.pollingEnabled,
+    ).toBe(true);
+  });
+
+  test("stops Telegram without scheduling work when the token is absent", async () => {
+    const statuses: Array<Record<string, unknown>> = [];
+    const config = testConfig({ TELEGRAM_POLLING_ENABLED: "true" });
+    const store = {
+      setTelegramRuntimeStatus: async (status: Record<string, unknown>) => {
+        statuses.push(status);
+      },
+    } as unknown as AgentStore;
+
+    await new TelegramPollingRuntime(config, store).run();
+
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toMatchObject({
+      enabled: false,
+      state: "disabled",
+      running: false,
+      nextRetryAt: null,
+    });
   });
 
   test("separates local and production Telegram polling scripts", async () => {
@@ -64,7 +91,10 @@ describe("durable agent baseline", () => {
   });
 
   test("reports Telegram disabled without degrading local HTTP health", async () => {
-    const config = { ...testConfig(), port: 0 };
+    const config = {
+      ...testConfig({ TELEGRAM_POLLING_ENABLED: "true" }),
+      port: 0,
+    };
     const store = {
       telegramRuntimeStatus: async () => null,
     } as unknown as AgentStore;
