@@ -83,8 +83,9 @@ El listener tiene:
 4. registro del contexto en `Dependencies` de `s42-core`;
 5. migraciones idempotentes;
 6. índices propiedad de cada módulo;
-7. seeds de test, sólo si están habilitados explícitamente;
-8. cambio de readiness a `true`.
+7. bootstrap idempotente del administrador de plataforma configurado;
+8. seeds de test, sólo si están habilitados explícitamente;
+9. cambio de readiness a `true`.
 
 Cada paso informa nombre y duración. Un fallo detiene el arranque.
 
@@ -92,7 +93,7 @@ Las migraciones se registran en la colección `migrations`. Una migración nueva
 debe tener un identificador único, ser idempotente y no crear bases de datos.
 
 `API_TEST_SEEDS=true` sólo es válido junto con `API_TEST_ENABLED=true` y un
-`TEST_TENANT_ID` existente. El scaffold nunca crea identidades de negocio ni
+`TEST_TENANT_ID` existente. Los seeds nunca crean identidades de negocio ni
 bases de test implícitas.
 
 ## Configuración
@@ -104,6 +105,8 @@ bases de test implícitas.
 | `API_PORT`                  | `3822`           | Puerto HTTP y WebSocket.                                  |
 | `MONGODB_URI`               | requerido        | URI de una base MongoDB existente.                        |
 | `MONGODB_DB`                | requerido        | Nombre exacto de la base existente.                       |
+| `DEFAULT_ADMIN_EMAIL`       | requerido        | Email normalizado del administrador inicial.              |
+| `DEFAULT_ADMIN_PASSWORD`    | requerido        | Password inicial; entre 12 y 256 caracteres.              |
 | `AUTH_ACCESS_SECRET`        | requerido        | Firma HMAC del access token; mínimo 32 caracteres.        |
 | `AUTH_REFRESH_SECRET`       | requerido        | Firma HMAC del refresh token; mínimo 32 caracteres.       |
 | `CSRF_SECRET`               | requerido        | Firma y binding de CSRF; mínimo 32 caracteres.            |
@@ -299,15 +302,34 @@ No implementar DDD, arquitectura hexagonal, CQRS ni capas sin uso concreto.
 
 ## Administrador inicial
 
-El primer administrador se crea explícitamente contra la base configurada:
+`DEFAULT_ADMIN_EMAIL` y `DEFAULT_ADMIN_PASSWORD` son obligatorios. Después de
+asegurar el índice único de email, cada arranque consulta el email normalizado:
+
+- si no existe, crea un `platform_admin` activo con nombre
+  `Administrador principal`;
+- si ya existe, no cambia su nombre, estado ni password;
+- ante dos arranques concurrentes, el índice único determina el alta y ambos
+  procesos continúan usando la identidad existente.
+
+La contraseña se hashea con `Bun.password` antes de persistirla. Ni la
+contraseña ni su hash se imprimen en logs. Cambiar
+`DEFAULT_ADMIN_PASSWORD` no resetea una cuenta existente; para crear una
+identidad distinta se debe configurar deliberadamente otro email.
+
+El administrador ingresa en `apps/backoffice` desde `/login`, modo
+`Plataforma`, con el email y password configurados. El navegador nunca recibe
+estas variables.
+
+Para crear administradores adicionales por operación explícita sigue
+disponible:
 
 ```bash
 cd apps/api
 ADMIN_EMAIL=... ADMIN_NAME=... ADMIN_PASSWORD=... bun run administrator:create
 ```
 
-El comando requiere `MONGODB_URI` y `MONGODB_DB`, valida el contrato, crea los
-índices necesarios y falla si el email ya existe. No imprime passwords.
+Ese comando también requiere `MONGODB_URI` y `MONGODB_DB`, falla si el email
+ya existe y no imprime passwords.
 
 ## Tests y validación
 

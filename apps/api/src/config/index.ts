@@ -1,3 +1,4 @@
+import { EmailSchema } from "@stock42/contracts/common";
 import { z } from "zod";
 
 const BooleanStringSchema = z
@@ -15,6 +16,8 @@ const ApiConfigSchema = z
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(3822),
     MONGODB_URI: z.string().min(1),
     MONGODB_DB: z.string().min(1),
+    DEFAULT_ADMIN_EMAIL: EmailSchema,
+    DEFAULT_ADMIN_PASSWORD: z.string().min(12).max(256),
     AUTH_ACCESS_SECRET: z.string().min(32),
     AUTH_REFRESH_SECRET: z.string().min(32),
     CSRF_SECRET: z.string().min(32),
@@ -44,6 +47,10 @@ const ApiConfigSchema = z
     mongo: {
       uri: value.MONGODB_URI,
       database: value.MONGODB_DB,
+    },
+    defaultAdministrator: {
+      email: value.DEFAULT_ADMIN_EMAIL,
+      password: value.DEFAULT_ADMIN_PASSWORD,
     },
     auth: {
       accessSecret: value.AUTH_ACCESS_SECRET,

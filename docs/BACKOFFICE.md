@@ -83,6 +83,13 @@ El formulario permite dos modos:
 - Plataforma: `actorKind=administrator`, email y password.
 - Tenant: `actorKind=operator`, tenant slug, email y password.
 
+En modo Plataforma se usan las credenciales
+`DEFAULT_ADMIN_EMAIL`/`DEFAULT_ADMIN_PASSWORD` configuradas en `apps/api`. El
+boot de la API crea esa identidad cuando el email todavía no existe. Si ya
+existe, no reemplaza su password ni la reactiva. Las variables permanecen en el
+runtime de la API: el Backoffice sólo envía los valores escritos por el usuario
+y no los expone ni los precarga.
+
 Flujo:
 
 1. solicita CSRF anónimo;

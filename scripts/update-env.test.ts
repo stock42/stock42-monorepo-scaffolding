@@ -40,9 +40,19 @@ describe("update:env", () => {
   test("genera valores aceptados por los contratos de API y agente", () => {
     for (const scenario of ["development", "test", "production"] as const) {
       const values = buildScenarioDefaults(scenario, () => "x".repeat(32));
-      expect(() => loadConfig(values.api)).not.toThrow();
+      values.api.DEFAULT_ADMIN_EMAIL = "ADMIN@EXAMPLE.COM";
+      values.api.DEFAULT_ADMIN_PASSWORD = "a-secure-password";
+      expect(loadConfig(values.api).defaultAdministrator.email).toBe("admin@example.com");
       expect(() => loadAgentConfig(values.agent)).not.toThrow();
     }
+  });
+
+  test("requiere credenciales explícitas para el administrador inicial", () => {
+    const values = buildScenarioDefaults("development", () => "x".repeat(32));
+
+    expect(values.api.DEFAULT_ADMIN_EMAIL).toBe("");
+    expect(values.api.DEFAULT_ADMIN_PASSWORD).toBe("");
+    expect(() => loadConfig(values.api)).toThrow(/DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD/);
   });
 
   test("preserva valores existentes sin arrastrar defaults inseguros entre escenarios", () => {
@@ -135,6 +145,8 @@ describe("update:env", () => {
 
   test("mantiene alineados los puertos por defecto, scripts y Nginx", async () => {
     const defaults = buildScenarioDefaults("development", () => "x".repeat(32));
+    defaults.api.DEFAULT_ADMIN_EMAIL = "admin@example.com";
+    defaults.api.DEFAULT_ADMIN_PASSWORD = "a-secure-password";
     const apiWithoutPort = { ...defaults.api };
     delete apiWithoutPort.API_PORT;
 

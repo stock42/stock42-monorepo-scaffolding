@@ -44,6 +44,7 @@ const scenarioControlledKeys = new Set([
 ]);
 const secretKeys = new Set([
   "MONGODB_URI",
+  "DEFAULT_ADMIN_PASSWORD",
   "AGENT_SERVICE_TOKEN",
   "AUTH_ACCESS_SECRET",
   "AUTH_REFRESH_SECRET",
@@ -123,6 +124,8 @@ export function buildScenarioDefaults(
       API_PORT: "3822",
       MONGODB_URI: "mongodb://127.0.0.1:27017",
       MONGODB_DB: "stock42_existing",
+      DEFAULT_ADMIN_EMAIL: "",
+      DEFAULT_ADMIN_PASSWORD: "",
       AUTH_ACCESS_SECRET: createSecret(),
       AUTH_REFRESH_SECRET: createSecret(),
       CSRF_SECRET: createSecret(),
@@ -328,6 +331,9 @@ export function promptSections(values: AppEnvValues) {
 
 function validationError(key: string, value: string, values: AppEnvValues): string | undefined {
   if (value === "") return optionalKeys.has(key) ? undefined : "No puede quedar vacío.";
+  if (key === "DEFAULT_ADMIN_PASSWORD" && (value.length < 12 || value.length > 256)) {
+    return "Debe tener entre 12 y 256 caracteres.";
+  }
   if (longSecretKeys.has(key) && value.length < 32) return "Debe tener al menos 32 caracteres.";
   if (booleanKeys.has(key) && value !== "true" && value !== "false") {
     return "Usá true o false.";
@@ -344,6 +350,12 @@ function validationError(key: string, value: string, values: AppEnvValues): stri
   }
   if (key === "MONGODB_URI" && !/^mongodb(?:\+srv)?:\/\//.test(value)) {
     return "Usá una URI mongodb:// o mongodb+srv://.";
+  }
+  if (
+    key === "DEFAULT_ADMIN_EMAIL" &&
+    (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || value.length > 254)
+  ) {
+    return "Ingresá un email válido.";
   }
   if (httpUrlKeys.has(key)) {
     try {
@@ -482,6 +494,7 @@ function secretHint(
   if (hasExistingValue(existing, target)) return "mantener actual";
   if (generatedSecretKeys.has(target.key)) return "generar automáticamente";
   if (target.key === "DEEPSEEK_API_KEY") return "reemplazar luego";
+  if (target.key === "DEFAULT_ADMIN_PASSWORD") return "obligatoria";
   return defaultValue === "" ? "vacío" : defaultValue;
 }
 

@@ -208,24 +208,29 @@ El orden del boot es:
 3. construir el contexto;
 4. ejecutar migraciones;
 5. crear índices por módulo;
-6. ejecutar seeds solo bajo opt-in explícito;
-7. cargar módulos s42-core;
-8. iniciar HTTP y WebSocket;
-9. marcar readiness.
+6. asegurar el administrador de plataforma configurado;
+7. ejecutar seeds solo bajo opt-in explícito;
+8. cargar módulos s42-core;
+9. iniciar HTTP y WebSocket;
+10. marcar readiness.
 
-No se crea un administrador por default. El primer administrador se crea de
-forma explícita, sin pasar la contraseña como argumento visible:
+`apps/api/.env` debe definir:
 
-```bash
-MONGODB_URI='...' \
-MONGODB_DB='...' \
-ADMIN_EMAIL='admin@example.com' \
-ADMIN_NAME='Platform Admin' \
-ADMIN_PASSWORD='...' \
-bun run --cwd apps/api administrator:create
+```env
+DEFAULT_ADMIN_EMAIL=admin@example.com
+DEFAULT_ADMIN_PASSWORD=...
 ```
 
-El script no imprime la contraseña.
+`bun run update:env` solicita ambos valores sin mostrar la contraseña. Al
+arrancar, la API busca el email después de asegurar sus índices. Si no existe,
+crea un administrador activo y persiste únicamente el hash producido por
+`Bun.password`; si existe, conserva íntegramente su nombre, estado y password.
+Por lo tanto, cambiar la variable de password no funciona como reset.
+
+Estas credenciales se usan en `/login` del Backoffice con el modo
+`Plataforma`. Para altas adicionales se mantiene
+`bun run --cwd apps/api administrator:create` con `ADMIN_EMAIL`, `ADMIN_NAME` y
+`ADMIN_PASSWORD`.
 
 ## 9. Tenancy
 

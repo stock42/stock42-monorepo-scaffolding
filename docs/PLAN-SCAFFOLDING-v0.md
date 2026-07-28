@@ -463,6 +463,7 @@ considera satisfecha solo si un test negativo demuestra que un import
 
 - puerto y host;
 - URI y nombre de la base Mongo existente;
+- email y password del administrador de plataforma inicial;
 - orígenes CORS;
 - secretos de firma de acceso, refresh, CSRF y tickets WebSocket;
 - URL y service token del agente;
@@ -677,19 +678,24 @@ Orden previsto:
 3. Construir el contexto compartido de la API.
 4. Ejecutar migraciones pendientes de forma idempotente.
 5. Pedir a cada módulo que asegure sus colecciones e índices.
-6. Ejecutar seeds de test solo si están habilitados de forma explícita.
-7. Construir y registrar módulos `s42-core`.
-8. Preparar el gateway interno hacia el agente.
-9. Preparar tickets, upgrade y registry WebSocket.
-10. Iniciar el listener.
-11. Exponer readiness solo cuando las dependencias obligatorias estén listas.
+6. Crear el administrador de plataforma configurado si su email no existe.
+7. Ejecutar seeds de test solo si están habilitados de forma explícita.
+8. Construir y registrar módulos `s42-core`.
+9. Preparar el gateway interno hacia el agente.
+10. Preparar tickets, upgrade y registry WebSocket.
+11. Iniciar el listener.
+12. Exponer readiness solo cuando las dependencias obligatorias estén listas.
 
 Características obligatorias:
 
 - pasos nombrados y logs con duración;
 - reejecución segura;
 - errores fatales visibles;
-- ningún administrador o dataset de negocio creado de forma implícita;
+- bootstrap idempotente del administrador definido por
+  `DEFAULT_ADMIN_EMAIL`/`DEFAULT_ADMIN_PASSWORD`, sin sobrescribir una cuenta
+  existente;
+- ningún tenant, operador, usuario ni dataset de negocio creado de forma
+  implícita;
 - migraciones con identificador y registro de ejecución;
 - mecanismo de cierre testeable dentro de las capacidades disponibles.
 
@@ -1627,6 +1633,7 @@ Acciones:
 - crear runner de boot;
 - crear registro simple de migraciones;
 - delegar índices a módulos;
+- crear idempotentemente el administrador de plataforma configurado;
 - agregar seeds explícitos de test;
 - medir y loguear pasos;
 - probar doble ejecución.
@@ -1635,7 +1642,9 @@ Criterios de aceptación:
 
 - correr boot dos veces conserva estado válido;
 - cada índice tiene owner;
-- no se crean datasets de negocio;
+- el administrador configurado se crea una sola vez y su password no se
+  sobrescribe;
+- no se crean tenants, operadores, usuarios ni datasets de negocio;
 - los seeds no corren sin flag y entorno autorizados;
 - un fallo detiene readiness.
 

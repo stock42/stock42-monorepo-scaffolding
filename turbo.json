@@ -9,7 +9,13 @@
     "dev": {
       "cache": false,
       "persistent": true,
-      "env": ["API_PORT", "WEBAPP_PORT", "BACKOFFICE_PORT"]
+      "env": [
+        "API_PORT",
+        "WEBAPP_PORT",
+        "BACKOFFICE_PORT",
+        "DEFAULT_ADMIN_EMAIL",
+        "DEFAULT_ADMIN_PASSWORD"
+      ]
     },
     "dev:telegram": {
       "cache": false,
@@ -18,7 +24,13 @@
     "start": {
       "cache": false,
       "persistent": true,
-      "env": ["API_PORT", "WEBAPP_PORT", "BACKOFFICE_PORT"]
+      "env": [
+        "API_PORT",
+        "WEBAPP_PORT",
+        "BACKOFFICE_PORT",
+        "DEFAULT_ADMIN_EMAIL",
+        "DEFAULT_ADMIN_PASSWORD"
+      ]
     },
     "check-types": {
       "dependsOn": ["^check-types"],
@@ -35,7 +47,14 @@
     "test:api": {
       "cache": false,
       "outputs": ["coverage/**"],
-      "env": ["API_TEST_ENABLED", "MONGODB_URI", "MONGODB_DB", "TEST_TENANT_ID"]
+      "env": [
+        "API_TEST_ENABLED",
+        "MONGODB_URI",
+        "MONGODB_DB",
+        "TEST_TENANT_ID",
+        "DEFAULT_ADMIN_EMAIL",
+        "DEFAULT_ADMIN_PASSWORD"
+      ]
     },
     "test:e2e": {
       "cache": false,

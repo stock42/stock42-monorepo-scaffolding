@@ -16,6 +16,7 @@ import { UserStorage } from "@/modules/users/services/UserStorage";
 import { RateLimiter } from "@/security/rate-limit";
 import { WebSocketGateway } from "@/websocket/WebSocketGateway";
 import { WebSocketTicketService } from "@/websocket/WebSocketTicketService";
+import { ensureDefaultAdministrator } from "./default-administrator";
 import { runMigrations } from "./migrations";
 import { runTestSeeds } from "./test-seeds";
 
@@ -93,6 +94,9 @@ export async function runBoot(config: ApiConfig): Promise<AppContext> {
     await audit.ensureIndexes();
     await tickets.ensureIndexes();
   });
+  await step("default-administrator", () =>
+    ensureDefaultAdministrator(config.defaultAdministrator, administrators),
+  );
   await step("test-seeds", () => runTestSeeds(context));
   context.ready = true;
   return context;

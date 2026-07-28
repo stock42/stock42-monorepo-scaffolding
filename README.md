@@ -14,7 +14,9 @@ bun run update:env
 
 `update:env` configura interactivamente desarrollo, tests o producción y crea
 el `.env` de cada app con defaults coherentes. Los valores de MongoDB deben
-apuntar a una base existente. Nunca se crea `.env.local`.
+apuntar a una base existente. La configuración solicita el email y la
+contraseña del administrador inicial; la API lo crea de forma idempotente al
+arrancar. Nunca se crea `.env.local`.
 
 ```bash
 ./build-all.sh       # compila solo webapp y backoffice

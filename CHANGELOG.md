@@ -9,6 +9,10 @@ El formato sigue una versión simplificada de
 
 ### Added
 
+- Se agregó el bootstrap idempotente del administrador de plataforma: la API
+  exige `DEFAULT_ADMIN_EMAIL` y `DEFAULT_ADMIN_PASSWORD`, crea la cuenta al
+  arrancar si el email no existe y permite ingresar con esas credenciales desde
+  el modo Plataforma del Backoffice.
 - Se agregaron `docs/API.md`, `docs/AI-AGENTS.md`, `docs/WEBAPP.md` y
   `docs/BACKOFFICE.md` con arquitectura, funcionalidad real, configuración,
   seguridad, rutas, operación, testing y guías de extensión por superficie; se
@@ -94,6 +98,9 @@ El formato sigue una versión simplificada de
 
 ### Security
 
+- El bootstrap persiste únicamente el hash generado por `Bun.password`, no
+  registra passwords ni hashes y nunca sobrescribe nombre, estado o credenciales
+  de un administrador ya existente.
 - `getUpdates` queda aislado del proceso HTTP, conserva el default local
   deshabilitado y reintenta fallos/409 con backoff de 1–30 segundos sin
   derribar el agente. Tenant, actor y rol se resuelven desde MongoDB; mensajes

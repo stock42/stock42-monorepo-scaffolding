@@ -62,6 +62,8 @@ jobs:
       NODE_ENV: test
       MONGODB_URI: ${{ secrets.CI_MONGODB_URI }}
       MONGODB_DB: ${{ secrets.CI_MONGODB_DB }}
+      DEFAULT_ADMIN_EMAIL: ${{ secrets.CI_E2E_ADMIN_EMAIL }}
+      DEFAULT_ADMIN_PASSWORD: ${{ secrets.CI_E2E_ADMIN_PASSWORD }}
       AUTH_ACCESS_SECRET: ${{ secrets.CI_AUTH_ACCESS_SECRET }}
       AUTH_REFRESH_SECRET: ${{ secrets.CI_AUTH_REFRESH_SECRET }}
       CSRF_SECRET: ${{ secrets.CI_CSRF_SECRET }}
@@ -97,7 +99,8 @@ jobs:
           required=(
             MONGODB_URI MONGODB_DB AUTH_ACCESS_SECRET AUTH_REFRESH_SECRET
             CSRF_SECRET WEBSOCKET_TICKET_SECRET AGENT_SERVICE_TOKEN
-            DEEPSEEK_API_KEY TEST_TENANT_ID
+            DEEPSEEK_API_KEY TEST_TENANT_ID DEFAULT_ADMIN_EMAIL
+            DEFAULT_ADMIN_PASSWORD
           )
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then
