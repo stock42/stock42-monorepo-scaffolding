@@ -100,3 +100,13 @@ se informa el error exacto sin alterar credenciales.
 - `CHANGELOG.md` se actualiza automáticamente en cada tarea.
 - `docs/PLAN-SCAFFOLDING-v0.md` conserva las decisiones de arquitectura
   aprobadas.
+- Antes de modificar `apps/api`, leer `docs/API.md`.
+- Antes de modificar `apps/agent` o el sistema agéntico transversal, leer
+  `docs/AI-AGENTS.md`.
+- Antes de modificar `apps/webapp`, leer `docs/WEBAPP.md`.
+- Antes de modificar `apps/backoffice`, leer `docs/BACKOFFICE.md`.
+- Un cambio que cruce superficies requiere leer todos los documentos
+  involucrados.
+- Cuando cambien funcionalidades, configuración, contratos, rutas, seguridad,
+  operación o tests de una superficie, actualizar su documento en la misma
+  tarea.

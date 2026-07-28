@@ -9,6 +9,10 @@ El formato sigue una versión simplificada de
 
 ### Added
 
+- Se agregaron `docs/API.md`, `docs/AI-AGENTS.md`, `docs/WEBAPP.md` y
+  `docs/BACKOFFICE.md` con arquitectura, funcionalidad real, configuración,
+  seguridad, rutas, operación, testing y guías de extensión por superficie; se
+  incorporó su lectura obligatoria y mantenimiento en `AGENTS.md`.
 - Se agregó `bun run update:env`, una CLI interactiva para crear o actualizar
   los `.env` de las cuatro apps según el escenario de desarrollo, tests o
   producción, con defaults contextuales, secretos ocultos y sincronizados,
