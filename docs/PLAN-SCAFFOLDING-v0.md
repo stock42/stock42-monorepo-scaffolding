@@ -92,6 +92,16 @@ Las siguientes decisiones son vinculantes para v0:
 29. Nunca se crea `.env.local`.
 30. Cada tarea futura termina con actualización de `CHANGELOG.md`, commit y
     push obligatorios.
+31. Cada workspace dentro de `apps/*` declara obligatoriamente los scripts
+    `build`, `start` y `dev` en su `package.json`.
+32. Solo `apps/webapp` y `apps/backoffice` se compilan. `apps/api` y
+    `apps/agent` se ejecutan directamente desde TypeScript con Bun y sus scripts
+    `build` son no-op exitosos; nunca generan `dist`.
+33. La raíz incluye como launchers operativos `build-all.sh`, `run-all.sh` y
+    `run-dev-all.sh`.
+34. `build-all.sh` mantiene una allowlist explícita de webapps Next.js.
+    `run-all.sh` y `run-dev-all.sh` inician todas las apps y deben mantenerse
+    sincronizados con `apps/*`.
 
 ## 3. Alcance de v0
 
@@ -112,6 +122,8 @@ Las siguientes decisiones son vinculantes para v0:
 - Integración API → agente mediante HTTP interno autenticado.
 - WebSocket funcional en la API.
 - Nginx para todas las superficies públicas.
+- Scripts raíz para compilar solo las webapps y ejecutar todas las apps en modo
+  producción o desarrollo.
 - Tests, fixtures seguros, Playwright y CI.
 - Documentación operativa y de desarrollo.
 
@@ -183,6 +195,9 @@ reemplazado y no debe borrar `initial.md`.
 ├── GUIDE.md
 ├── CHANGELOG.md
 ├── README.md
+├── build-all.sh
+├── run-all.sh
+├── run-dev-all.sh
 ├── bunfig.toml
 ├── package.json
 ├── turbo.json
@@ -220,6 +235,11 @@ Que `apps/agent` tenga más de un entrypoint no lo convierte en varias apps. El
 dominio, la persistencia y el runtime continúan siendo propiedad de una sola
 aplicación.
 
+Todo directorio bajo `apps/*` es, por definición, un proceso ejecutable. Por
+eso debe responder a `bun run build`, `bun run start` y `bun run dev`. Un
+workspace que no pueda iniciar un proceso pertenece a `packages/*`, no a
+`apps/*`.
+
 ## 6. Bun y Turborepo
 
 ### 6.1 Workspace
@@ -241,12 +261,154 @@ ejemplo TypeScript, Zod, React, Next.js, ESLint, Playwright y tipos de Node/Bun.
 No se crea un catálogo masivo que oculte las dependencias específicas de cada
 workspace.
 
-### 6.2 Pipeline Turbo
+### 6.2 Contrato uniforme de scripts por app
+
+El contrato obligatorio es:
+
+| App | `build` | `start` | `dev` |
+| --- | --- | --- | --- |
+| `apps/webapp` | `next build` | `next start` | `next dev` |
+| `apps/backoffice` | `next build` | `next start` | `next dev` |
+| `apps/api` | No-op exitoso | Bun sobre `src/index.ts` | Bun hot/watch sobre `src/index.ts` |
+| `apps/agent` | No-op exitoso | Coordinador Bun de todos sus entrypoints | Coordinador Bun en modo desarrollo |
+
+Los manifests de API y agente deben usar el mismo no-op Bun explícito:
+
+```json
+{
+  "scripts": {
+    "build": "bun -e \"process.exit(0)\""
+  }
+}
+```
+
+No se usa `bun build`, `tsc` con emit, bundlers ni un `outdir` para API o
+agente. `check-types`, lint y tests siguen siendo gates reales e independientes
+del no-op de build.
+
+La API ejecuta el source:
+
+```json
+{
+  "scripts": {
+    "build": "bun -e \"process.exit(0)\"",
+    "start": "bun run src/index.ts",
+    "dev": "bun --hot src/index.ts"
+  }
+}
+```
+
+El agente expone un coordinador pequeño que inicia su servidor interno,
+launcher y supervisor:
+
+```json
+{
+  "scripts": {
+    "build": "bun -e \"process.exit(0)\"",
+    "start": "bun run src/entrypoints/all.ts",
+    "dev": "bun --hot src/entrypoints/all.ts"
+  }
+}
+```
+
+El coordinador no compila nada. Inicia procesos desde source, propaga señales,
+detiene todos los hijos cuando uno falla y devuelve el exit code causante.
+
+Los paquetes internos son JIT o configuración y no están obligados a declarar
+`build`, `start` o `dev`. En particular, un package nunca recibe scripts
+ficticios para satisfacer un launcher de apps.
+
+### 6.3 Launchers raíz
+
+El diseño combina lo mejor de los scripts auditados:
+
+- Farmasun aporta la allowlist explícita de webapps y el lifecycle de PIDs.
+- VisionSanar aporta la separación `build-all.sh`, `run-all.sh` y
+  `run-dev-all.sh`, además de la regla comprobada de que una librería nunca
+  debe vivir bajo `apps/*`.
+- Capacitar aporta validación previa de Bun y manifests, fail-fast y cleanup
+  cuando un proceso termina.
+- RastreaSalud aporta `--build` y la verificación de `.next/BUILD_ID` antes de
+  usar `next start`.
+
+No se copian los builds de API, launcher o supervisor encontrados en algunos de
+esos repositorios. En este scaffold esos procesos siempre ejecutan TypeScript
+directamente con Bun.
+
+Los tres archivos son ejecutables y usan Bash estricto, raíz resuelta desde
+`BASH_SOURCE`, validación de Bun y paths absolutos derivados de la raíz. No
+dependen del directorio desde el cual los invoque el usuario.
+
+#### `build-all.sh`
+
+- compila exclusivamente `apps/webapp` y `apps/backoffice`;
+- usa una allowlist explícita, nunca un glob `apps/*`;
+- valida que ambas tengan `package.json`;
+- delega cada build al script del package a través de Turborepo o del filtro de
+  Bun;
+- falla si una webapp falla;
+- nunca ejecuta el `build` de API o agente;
+- nunca genera ni busca `dist` para API o agente;
+- imprime un resumen final claro.
+
+El `package.json` raíz expone `build` con filtros explícitos:
+
+```json
+{
+  "scripts": {
+    "build": "turbo run build --filter=@stock42/webapp --filter=@stock42/backoffice"
+  }
+}
+```
+
+`build-all.sh` puede delegar a `bun run build`, manteniendo la allowlist tanto
+en el script raíz como en el comando Turbo. Agregar una nueva webapp exige
+actualizar deliberadamente ambas listas.
+
+#### `run-all.sh`
+
+- inicia las cuatro apps en modo producción mediante su propio `bun run start`;
+- mantiene una lista explícita de `api`, `agent`, `webapp` y `backoffice`;
+- verifica antes de iniciar que cada app tenga `package.json` y script `start`;
+- por defecto exige `.next/BUILD_ID` solo para webapp y backoffice;
+- acepta `--build` para ejecutar `build-all.sh` antes de iniciar;
+- nunca exige artefactos compilados a API o agente;
+- conserva PIDs, propaga `INT` y `TERM`, espera la salida y limpia todos los
+  procesos;
+- si una app termina o falla, detiene las demás y devuelve su exit code;
+- no publica ni inicia Nginx.
+
+#### `run-dev-all.sh`
+
+- inicia las cuatro apps mediante su propio `bun run dev`;
+- no ejecuta ningún build previo;
+- mantiene la misma lista explícita que `run-all.sh`;
+- aplica la misma propagación de señales, espera y cleanup;
+- es el comando recomendado para desarrollo integral local.
+
+Los scripts raíz pueden exponer:
+
+```json
+{
+  "scripts": {
+    "build": "turbo run build --filter=@stock42/webapp --filter=@stock42/backoffice",
+    "start": "./run-all.sh",
+    "dev": "./run-dev-all.sh"
+  }
+}
+```
+
+La lógica de cada aplicación permanece en su `package.json`; los launchers solo
+validan, coordinan y gestionan el ciclo de vida de procesos.
+
+### 6.4 Pipeline Turbo
 
 Las tareas base serán:
 
 - `dev`: persistente, sin caché.
-- `build`: depende de `^build`.
+- `start`: persistente, sin caché y sin build implícito.
+- `build`: depende de `^build`, pero el comando raíz lo filtra a las dos
+  webapps.
 - `check-types`: depende de los `check-types` de sus dependencias, no de todos
   los builds.
 - `lint`: depende de los `lint` de sus dependencias, no de todos los builds.
@@ -259,15 +421,18 @@ Las tareas base serán:
 Outputs mínimos:
 
 - Next.js: `.next/**`, excluyendo `.next/cache/**` y `.next/dev/**`.
-- Aplicaciones y paquetes TypeScript: `dist/**` cuando exista compilación.
 - Cobertura: `coverage/**` solo para tareas que la produzcan.
 - Playwright: `playwright-report/**` y `test-results/**`.
+
+No se declara `dist/**` como output general porque API, agente y packages no se
+compilan. Los paquetes compartidos usan TypeScript JIT y son consumidos por el
+bundler de las webapps o directamente por Bun.
 
 Las variables de entorno se declaran por tarea y por workspace. No se mantiene
 una lista global sobredimensionada en `turbo.json`. La caché nunca debe capturar
 secretos o resultados dependientes de secretos como si fueran equivalentes.
 
-### 6.3 Boundaries
+### 6.5 Boundaries
 
 Se aplican dos controles complementarios:
 
@@ -777,6 +942,7 @@ apps/agent/src/
 │   ├── uploads/
 │   └── artifacts/
 └── entrypoints/
+    ├── all.ts
     ├── server.ts
     ├── launcher.ts
     └── supervisor.ts
@@ -784,6 +950,11 @@ apps/agent/src/
 
 Los entrypoints comparten código interno, pero ningún otro workspace importa
 esos archivos.
+
+`all.ts` es el coordinador operativo invocado por los scripts `start` y `dev`
+del package. No reemplaza al launcher durable de runs: solo inicia y supervisa
+los entrypoints de la app. Todos ellos se ejecutan desde TypeScript con Bun, sin
+un paso de compilación.
 
 ### 16.2 Persistencia durable
 
@@ -1215,7 +1386,7 @@ El workflow de GitHub Actions:
 8. `bun audit`;
 9. tests unitarios;
 10. tests HTTP e integración;
-11. builds;
+11. `./build-all.sh`, que compila exclusivamente webapp y backoffice;
 12. Playwright Chromium desktop/mobile;
 13. publicación de artifacts de test ante fallos.
 
@@ -1255,6 +1426,11 @@ Debe contener, como mínimo:
 - no terminar con cambios de la tarea sin commitear o sin publicar;
 - preservar cambios ajenos;
 - no importar código entre apps;
+- exigir `build`, `start` y `dev` en cada `apps/*/package.json`;
+- compilar solo webapp y backoffice;
+- mantener `build` como no-op en API y agente;
+- revisar `build-all.sh`, `run-all.sh` y `run-dev-all.sh` cuando se agregue,
+  elimine, renombre o cambie el comando de una app;
 - usar Bun first, Next.js, shadcn, MongoDB, Zod y `s42-core`;
 - prohibir DDD y arquitectura hexagonal;
 - prohibir catch-all Route Handlers;
@@ -1277,6 +1453,8 @@ Debe explicar:
 - requisitos;
 - instalación con Bun;
 - comandos Turbo;
+- uso de `build-all.sh`, `run-all.sh` y `run-dev-all.sh`;
+- diferencia entre compilar webapps y ejecutar API/agente desde source;
 - estructura y límites;
 - configuración por app;
 - cómo usar la base Mongo existente sin crear otra;
@@ -1339,7 +1517,8 @@ Acciones:
 - crear `bunfig.toml` con linker aislado;
 - instalar Turborepo;
 - crear `turbo.json`;
-- definir tareas y outputs;
+- definir tareas `build`, `start`, `dev` y outputs;
+- fijar que el build raíz filtre únicamente webapp y backoffice;
 - agregar chequeo inicial de boundaries;
 - generar lockfile con Bun.
 
@@ -1348,6 +1527,7 @@ Criterios de aceptación:
 - `bun install --frozen-lockfile` funciona después de generar el lockfile;
 - `bun run turbo run build --dry` muestra el grafo esperado;
 - no hay dependencias de app en root;
+- el dry run de build no selecciona API ni agente;
 - lint/types no fuerzan builds completos innecesarios;
 - los límites detectan imports cruzados.
 
@@ -1384,11 +1564,15 @@ Acciones:
 - configurar `components.json` y aliases;
 - crear shells mínimos, tema y páginas de health visual;
 - crear Route Handlers explícitos de ejemplo;
+- declarar `build`, `start` y `dev` en ambas webapps;
+- crear `build-all.sh` con allowlist exclusiva de webapp y backoffice;
 - prohibir catch-all routes.
 
 Criterios de aceptación:
 
 - ambas apps construyen;
+- `./build-all.sh` produce únicamente los dos `.next`;
+- API y agente no forman parte del grafo ejecutado por `build-all.sh`;
 - ambas consumen un componente real desde `@stock42/ui`;
 - no duplican primitives compartidas;
 - no existe `pages/api`;
@@ -1401,6 +1585,7 @@ Objetivo: levantar una API mínima contra MongoDB real.
 Acciones:
 
 - crear `apps/api`;
+- declarar `build` no-op, `start` desde source y `dev` hot/watch;
 - integrar la versión publicada de `s42-core`;
 - validar configuración con Zod;
 - implementar el `MongoDBStorage` delgado;
@@ -1413,6 +1598,8 @@ Acciones:
 Criterios de aceptación:
 
 - health distingue live de ready;
+- `bun run build` dentro de la API termina exitosamente sin crear `dist`;
+- `start` y `dev` ejecutan `src/index.ts` con Bun;
 - la API no arranca con configuración inválida;
 - un test HTTP usa el servidor real;
 - los errores públicos están sanitizados;
@@ -1496,6 +1683,11 @@ Objetivo: crear la fuente de verdad durable.
 Acciones:
 
 - crear `apps/agent`;
+- declarar `build` no-op y scripts `start`/`dev` sobre
+  `src/entrypoints/all.ts`;
+- implementar el coordinador de entrypoints y su propagación de señales;
+- crear `run-all.sh` y `run-dev-all.sh` en la raíz con las cuatro apps
+  explícitas;
 - implementar configuración y servidor interno;
 - definir manifests;
 - crear colecciones y storages de conversations, messages, runs, events y
@@ -1507,6 +1699,10 @@ Acciones:
 Criterios de aceptación:
 
 - dos claims concurrentes no ejecutan el mismo run;
+- `bun run build` dentro del agente termina sin crear `dist`;
+- todas las apps declaran `build`, `start` y `dev`;
+- un smoke con Bun stub demuestra que ambos launchers seleccionan exactamente
+  api, agent, webapp y backoffice sin abrir puertos;
 - estados y transiciones están validados;
 - terminal es idempotente;
 - replay devuelve secuencia ordenada;
@@ -1643,6 +1839,8 @@ Acciones:
 - configurar fixtures en la base existente;
 - configurar Playwright desktop/mobile;
 - crear GitHub Actions;
+- ejecutar `build-all.sh` como único gate de compilación;
+- agregar smoke tests de selección, señales y cleanup de los launchers;
 - documentar secretos y comportamiento en forks;
 - publicar reportes ante fallos.
 
@@ -1651,7 +1849,9 @@ Criterios de aceptación:
 - ninguna suite crea o emula una base;
 - cleanup solo toca fixtures propias;
 - CI instala con lockfile congelado;
-- boundaries, types, lint, audit, tests, builds y E2E son gates;
+- boundaries, types, lint, audit, tests, build de las dos webapps y E2E son
+  gates;
+- CI no ejecuta `bun build` ni espera `dist` para API o agente;
 - los procesos de test se cierran;
 - las fallas reportan suficiente evidencia sin secretos.
 
@@ -1664,6 +1864,8 @@ Acciones:
 - completar GUIDE y README;
 - revisar AGENTS y CLAUDE;
 - ejecutar instalación limpia;
+- probar `build-all.sh`, `run-all.sh --build` y `run-dev-all.sh` sin dejar
+  procesos huérfanos;
 - ejecutar todos los gates;
 - comprobar configuración Nginx;
 - comprobar que no hay referencias de producto;
@@ -1678,6 +1880,9 @@ Criterios de aceptación:
 - no existen imports cross-app;
 - no existe `.env.local`;
 - no quedan prefijos ni dominios de proyectos fuente;
+- solo las webapps generan artefactos de build;
+- los tres launchers raíz están documentados, son ejecutables y están
+  sincronizados con las cuatro apps;
 - todos los gates pasan;
 - commit y push finalizados.
 
@@ -1687,6 +1892,8 @@ Criterios de aceptación:
 | --- | --- |
 | Bun | Instalación reproducible con lockfile congelado |
 | Turbo | Grafo, caché y outputs correctos |
+| Build | Solo webapp y backoffice generan `.next`; API/agente no generan `dist` |
+| Launchers | Build allowlisted y start/dev de las cuatro apps con cleanup |
 | Boundaries | Test negativo de import cross-app |
 | Next.js | Builds de webapp y backoffice |
 | shadcn | Componentes `base-nova` compartidos |
@@ -1799,6 +2006,16 @@ Controles:
   `apps/api/modules/email-campaign/models/CampaignModel.ts`
 - Storage de referencia:
   `apps/api/modules/email-campaign/services/campaign-storage.ts`
+- Build de webapps de Farmasun:
+  `build-all.sh`
+- Launcher integral de Farmasun:
+  `run-all.sh`
+- Build y launchers de VisionSanar:
+  `build-all.sh`, `run-all.sh` y `run-dev-all.sh`
+- Build y launcher de Capacitar:
+  `build-all.sh` y `run-all.sh`
+- Build y launcher con verificación `.next` de RastreaSalud:
+  `build-all.sh` y `run-all.sh`
 
 ### Documentación oficial
 
@@ -1820,13 +2037,15 @@ Una tarea del scaffold está terminada únicamente cuando:
 3. se implementó solo el alcance acordado;
 4. se actualizaron contratos y documentación afectados;
 5. se revisó `nginx/` si cambió una superficie operativa;
-6. se ejecutaron las validaciones proporcionales al cambio;
-7. se separaron fallos preexistentes de regresiones propias;
-8. se actualizó `CHANGELOG.md`;
-9. se revisó el diff y la ausencia de secretos;
-10. se creó un commit intencional;
-11. se hizo push al remoto canónico;
-12. se informó qué fue validado y qué no pudo validarse.
+6. se revisaron `build-all.sh`, `run-all.sh` y `run-dev-all.sh` si cambió una
+   app o su comando de ejecución;
+7. se ejecutaron las validaciones proporcionales al cambio;
+8. se separaron fallos preexistentes de regresiones propias;
+9. se actualizó `CHANGELOG.md`;
+10. se revisó el diff y la ausencia de secretos;
+11. se creó un commit intencional;
+12. se hizo push al remoto canónico;
+13. se informó qué fue validado y qué no pudo validarse.
 
 No alcanza con compilar, crear un commit o hacer push para afirmar que un
 despliegue está funcionando. Implementación, configuración, test y runtime son
