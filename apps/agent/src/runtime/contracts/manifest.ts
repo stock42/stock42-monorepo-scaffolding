@@ -22,6 +22,7 @@ export function createAssistantManifest(config: AgentConfig): AgentManifest {
       "ARTIFACT_STORAGE_PATH",
       "MAX_UPLOAD_BYTES",
       "TELEGRAM_BOT_TOKEN",
+      "TELEGRAM_POLLING_ENABLED",
       "AGENT_HEARTBEAT_MS",
       "AGENT_INACTIVITY_TIMEOUT_MS",
       "AGENT_RUN_TIMEOUT_MS",

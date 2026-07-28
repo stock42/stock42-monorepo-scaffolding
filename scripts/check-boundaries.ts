@@ -94,6 +94,22 @@ export async function findBoundaryViolations(): Promise<BoundaryViolation[]> {
         message: `apps/${entry.name} debe mantener build como no-op`,
       });
     }
+
+    if (entry.name === "agent") {
+      const telegramScripts = {
+        dev: "TELEGRAM_POLLING_ENABLED=false bun --hot src/entrypoints/all.ts",
+        "dev:telegram": "TELEGRAM_POLLING_ENABLED=true bun --hot src/entrypoints/all.ts",
+        start: "TELEGRAM_POLLING_ENABLED=true bun run src/entrypoints/all.ts",
+      };
+      for (const [script, expected] of Object.entries(telegramScripts)) {
+        if (manifest.scripts?.[script] !== expected) {
+          violations.push({
+            file: manifestPath,
+            message: `apps/agent debe mantener ${script} con la política de polling Telegram`,
+          });
+        }
+      }
+    }
   }
 
   const routes = await filesBelow(appsDirectory);

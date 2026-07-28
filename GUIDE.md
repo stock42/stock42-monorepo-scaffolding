@@ -345,6 +345,29 @@ critical crean una confirmation durable. Aprobar no cambia argumentos: el
 input está hasheado y almacenado con el tool call. Rechazo o expiración vuelve
 al loop como resultado explícito.
 
+### Telegram: entrega y polling
+
+El baseline v0 es únicamente saliente: la tool usa `sendMessage` y no consume
+`getUpdates`. Por eso el scaffold actual no puede competir con producción por
+el long polling ni provocar el `409 Conflict` de Telegram.
+
+La política queda preparada y protegida por tests para cualquier proyecto que
+agregue un adaptador entrante:
+
+```text
+bun run dev                         → polling false
+bun run dev:telegram                → polling true, opt-in local
+bun run start / ./run-all.sh        → polling true, producción
+ejecución directa del entrypoint    → polling false por defecto
+```
+
+`run-dev-all.sh` invoca `dev`, por lo que nunca habilita polling. Un futuro
+runtime de Telegram debe mantener el HTTP independiente, reportar
+`telegram.enabled=false` y `state=disabled` en local, degradar health sin
+derribar el listener y reintentar fallos de polling con backoff de 1 a 30
+segundos. El token nunca se registra. Se recomienda un token exclusivo para
+desarrollo incluso cuando se usa el opt-in.
+
 ## 13. Uploads y artifacts
 
 MongoDB guarda metadata; los bytes viven en filesystem configurable. Los

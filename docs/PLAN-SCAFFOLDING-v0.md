@@ -1155,7 +1155,16 @@ La integración inicial contempla:
 - redacción de token en logs;
 - clasificación write o critical según el destino y contenido.
 
-No se incluye un webhook público genérico sin autenticación.
+El baseline v0 es saliente y no ejecuta `getUpdates`. Si un proyecto agrega un
+adaptador entrante, la ejecución directa y `dev` mantienen
+`TELEGRAM_POLLING_ENABLED=false`; `dev:telegram` es el opt-in local y `start`
+lo fuerza a `true` para producción. El polling debe tener lifecycle separado
+del HTTP, health `disabled`/`degraded`, reintentos con backoff de 1 a 30 segundos
+y cleanup de procesos. Un fallo o `409 Conflict` de Telegram nunca debe apagar
+el listener HTTP.
+
+No se incluye un webhook público genérico sin autenticación. Es recomendable
+usar un token exclusivo para desarrollo y nunca compartir el token productivo.
 
 ### 18.5 PDF y CSV
 

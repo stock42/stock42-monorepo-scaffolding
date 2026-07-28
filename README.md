@@ -24,5 +24,11 @@ bun run test
 bun run boundaries
 ```
 
+La integración Telegram v0 es saliente (`sendMessage`) y no consume
+`getUpdates`. El desarrollo mantiene el polling deshabilitado; si un proyecto
+agrega un adaptador entrante, el opt-in local es
+`bun run --cwd apps/agent dev:telegram`, mientras `run-all.sh` conserva el modo
+productivo.
+
 Consulta [GUIDE.md](./GUIDE.md) para configuración, arquitectura, seguridad,
 pruebas y despliegue. Las reglas obligatorias están en [AGENTS.md](./AGENTS.md).

@@ -67,6 +67,14 @@ se informa el error exacto sin alterar credenciales.
   apps.
 - Al agregar, eliminar, renombrar o cambiar scripts de una app, revisar los
   tres launchers y el filtro `build` raíz.
+- El long polling de Telegram nunca se habilita por defecto en desarrollo ni
+  en una ejecución directa: `dev` fuerza `TELEGRAM_POLLING_ENABLED=false`,
+  `dev:telegram` es el opt-in local y `start` lo habilita para producción.
+  `run-dev-all.sh` usa `dev` y `run-all.sh` usa `start`.
+- Una integración entrante de Telegram debe separar el lifecycle HTTP del
+  polling, informar `disabled`/`degraded` en health y supervisar `getUpdates`
+  con backoff acotado sin apagar el HTTP. El envío saliente con `sendMessage`
+  no es polling.
 - Cuando una tarea cambie apps públicas, dominios, puertos, paths, WebSocket,
   health checks, timeouts, límites de body o headers de proxy, actualizar
   `nginx/` en la misma tarea.

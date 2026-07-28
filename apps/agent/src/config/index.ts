@@ -2,6 +2,10 @@ import { resolve } from "node:path";
 import { z } from "zod";
 
 const PositiveInteger = (fallback: number) => z.coerce.number().int().positive().default(fallback);
+const BooleanString = z
+  .enum(["true", "false"])
+  .default("false")
+  .transform((value) => value === "true");
 
 const AgentConfigSchema = z
   .object({
@@ -27,6 +31,7 @@ const AgentConfigSchema = z
     ARTIFACT_STORAGE_PATH: z.string().min(1).default("./artifacts"),
     MAX_UPLOAD_BYTES: PositiveInteger(10 * 1024 * 1024),
     TELEGRAM_BOT_TOKEN: z.string().optional(),
+    TELEGRAM_POLLING_ENABLED: BooleanString,
   })
   .transform((value) => ({
     environment: value.NODE_ENV,
@@ -56,6 +61,7 @@ const AgentConfigSchema = z
       maxUploadBytes: value.MAX_UPLOAD_BYTES,
     },
     telegramBotToken: value.TELEGRAM_BOT_TOKEN || undefined,
+    telegramPollingEnabled: value.TELEGRAM_POLLING_ENABLED,
   }));
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;

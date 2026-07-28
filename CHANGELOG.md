@@ -56,6 +56,13 @@ El formato sigue una versión simplificada de
 
 ### Security
 
+- Se deshabilitó explícitamente el long polling de Telegram en `dev` y por
+  defecto en ejecuciones directas; `dev:telegram` queda como opt-in local y
+  `start` lo habilita para producción. Tests y boundaries protegen este
+  contrato para evitar consumidores `getUpdates` concurrentes y errores 409.
+- Se documentó que la integración v0 es saliente mediante `sendMessage`; todo
+  adaptador entrante futuro debe aislar HTTP, health y polling con supervisión
+  y backoff acotado.
 - Se fijaron overrides transitivos para resolver los avisos conocidos de
   dependencias detectados por `bun audit`.
 - Se estableció como regla obligatoria no leer, copiar, modificar, eliminar ni
