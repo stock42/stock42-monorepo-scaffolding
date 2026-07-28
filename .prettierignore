@@ -1,0 +1,13 @@
+.agents/
+.next/
+.turbo/
+node_modules/
+coverage/
+playwright-report/
+test-results/
+/apps/agent/artifacts/
+/apps/agent/uploads/
+bun.lock
+initial.md
+docs/PLAN-SCAFFOLDING-v0.md
+skills-lock.json

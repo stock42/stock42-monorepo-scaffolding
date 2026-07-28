@@ -1,6 +1,6 @@
 # Plan de construcción del scaffolding Stock42 v0
 
-Estado: aprobado para implementación por etapas
+Estado: implementado como scaffolding v0
 
 Fecha de la planificación: 2026-07-28
 
@@ -27,8 +27,8 @@ multi-tenant con:
 - Flujo Git obligatorio de pull, implementación, validación, changelog, commit y
   push.
 
-Este plan no implementa todavía el scaffold. Determina su estructura, orden,
-contratos mínimos, criterios de aceptación y límites.
+Este documento conserva la estructura, el orden, los contratos mínimos, los
+criterios de aceptación y los límites usados para implementar el scaffold v0.
 
 ## 2. Decisiones confirmadas
 

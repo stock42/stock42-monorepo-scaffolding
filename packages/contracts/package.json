@@ -1,0 +1,30 @@
+{
+  "name": "@stock42/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./agent": "./src/agent.ts",
+    "./auth": "./src/auth.ts",
+    "./common": "./src/common.ts",
+    "./files": "./src/files.ts",
+    "./tenancy": "./src/tenancy.ts",
+    "./websocket": "./src/websocket.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@stock42/eslint-config": "workspace:*",
+    "@stock42/typescript-config": "workspace:*",
+    "@types/bun": "catalog:",
+    "eslint": "catalog:",
+    "typescript": "catalog:"
+  }
+}

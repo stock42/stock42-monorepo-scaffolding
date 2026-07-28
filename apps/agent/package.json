@@ -1,0 +1,30 @@
+{
+  "name": "@stock42/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun -e \"process.exit(0)\"",
+    "start": "bun run src/entrypoints/all.ts",
+    "dev": "bun --hot src/entrypoints/all.ts",
+    "server": "bun run src/entrypoints/server.ts",
+    "launcher": "bun run src/entrypoints/launcher.ts",
+    "supervisor": "bun run src/entrypoints/supervisor.ts",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@stock42/contracts": "workspace:*",
+    "mongodb": "6.21.0",
+    "pdf-lib": "1.17.1",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@stock42/eslint-config": "workspace:*",
+    "@stock42/typescript-config": "workspace:*",
+    "@types/bun": "catalog:",
+    "eslint": "catalog:",
+    "typescript": "catalog:"
+  }
+}

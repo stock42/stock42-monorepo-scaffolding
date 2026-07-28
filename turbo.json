@@ -1,0 +1,52 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "cache": false,
+      "persistent": true
+    },
+    "check-types": {
+      "dependsOn": ["^check-types"],
+      "outputs": []
+    },
+    "lint": {
+      "dependsOn": ["^lint"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^check-types"],
+      "outputs": []
+    },
+    "test:api": {
+      "cache": false,
+      "outputs": ["coverage/**"],
+      "env": ["API_TEST_ENABLED", "MONGODB_URI", "MONGODB_DB", "TEST_TENANT_ID"]
+    },
+    "test:e2e": {
+      "cache": false,
+      "outputs": ["playwright-report/**", "test-results/**"],
+      "env": [
+        "E2E_ENABLED",
+        "E2E_ADMIN_EMAIL",
+        "E2E_ADMIN_PASSWORD",
+        "E2E_USER_EMAIL",
+        "E2E_USER_PASSWORD"
+      ]
+    },
+    "boundaries": {
+      "outputs": []
+    },
+    "format:check": {
+      "outputs": []
+    }
+  }
+}

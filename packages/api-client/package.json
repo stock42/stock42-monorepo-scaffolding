@@ -1,0 +1,26 @@
+{
+  "name": "@stock42/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@stock42/contracts": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@stock42/eslint-config": "workspace:*",
+    "@stock42/typescript-config": "workspace:*",
+    "@types/bun": "catalog:",
+    "eslint": "catalog:",
+    "typescript": "catalog:"
+  }
+}

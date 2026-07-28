@@ -1,0 +1,29 @@
+{
+  "name": "@stock42/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun -e \"process.exit(0)\"",
+    "start": "bun run src/index.ts",
+    "dev": "bun --hot src/index.ts",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src test scripts",
+    "test": "bun test src test/unit",
+    "test:api": "bun test test/integration",
+    "administrator:create": "bun run scripts/create-administrator.ts"
+  },
+  "dependencies": {
+    "@stock42/contracts": "workspace:*",
+    "mongodb": "6.21.0",
+    "s42-core": "3.0.10",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@stock42/eslint-config": "workspace:*",
+    "@stock42/typescript-config": "workspace:*",
+    "@types/bun": "catalog:",
+    "eslint": "catalog:",
+    "typescript": "catalog:"
+  }
+}

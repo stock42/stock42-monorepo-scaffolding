@@ -1,0 +1,12 @@
+{
+  "extends": "@stock42/typescript-config/base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "noUncheckedIndexedAccess": false,
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "types": ["bun"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+}

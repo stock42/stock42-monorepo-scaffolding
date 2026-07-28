@@ -1,0 +1,39 @@
+{
+  "name": "@stock42/backoffice",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "bun test test",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@stock42/api-client": "workspace:*",
+    "@stock42/contracts": "workspace:*",
+    "@stock42/ui": "workspace:*",
+    "geist": "^1.5.1",
+    "lucide-react": "^0.468.0",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@stock42/eslint-config": "workspace:*",
+    "@stock42/typescript-config": "workspace:*",
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/bun": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "eslint": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:"
+  }
+}

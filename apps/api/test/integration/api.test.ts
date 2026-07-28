@@ -1,0 +1,294 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { AuthResponseSchema, CsrfResponseSchema } from "@stock42/contracts/auth";
+import {
+  OperatorListResponseSchema,
+  OperatorResponseSchema,
+  TenantListResponseSchema,
+  TenantResponseSchema,
+  UserListResponseSchema,
+  UserResponseSchema,
+} from "@stock42/contracts/tenancy";
+import type { RunningApi } from "@/index";
+import { getAppContext } from "@/context";
+
+const enabled = Bun.env.API_TEST_ENABLED === "true";
+const testRunId = `api-test-${crypto.randomUUID()}`;
+const administratorEmail = `${testRunId}@example.test`;
+const administratorPassword = `S42-${crypto.randomUUID()}-secure`;
+const ownerPassword = `S42-${crypto.randomUUID()}-owner`;
+const userPassword = `S42-${crypto.randomUUID()}-user`;
+let running: RunningApi | undefined;
+
+class CookieJar {
+  private readonly values = new Map<string, string>();
+
+  absorb(headers: Headers): void {
+    const setCookies = headers.getSetCookie();
+    for (const setCookie of setCookies) {
+      const [pair] = setCookie.split(";", 1);
+      const separator = pair?.indexOf("=") ?? -1;
+      if (!pair || separator < 1) continue;
+      const name = pair.slice(0, separator);
+      const value = pair.slice(separator + 1);
+      if (/max-age=0/i.test(setCookie)) this.values.delete(name);
+      else this.values.set(name, value);
+    }
+  }
+
+  header(): string {
+    return [...this.values].map(([name, value]) => `${name}=${value}`).join("; ");
+  }
+}
+
+async function jsonBody(response: Response): Promise<unknown> {
+  expect(response.headers.get("content-type")).toContain("application/json");
+  return response.json();
+}
+
+async function csrf(baseUrl: URL, jar: CookieJar): Promise<string> {
+  const response = await fetch(new URL("/auth/csrf", baseUrl), {
+    method: "POST",
+    headers: { cookie: jar.header() },
+  });
+  jar.absorb(response.headers);
+  return CsrfResponseSchema.parse(await jsonBody(response)).data.csrfToken;
+}
+
+async function mutate(
+  baseUrl: URL,
+  jar: CookieJar,
+  path: string,
+  body?: unknown,
+  method: "POST" | "PATCH" = "POST",
+): Promise<Response> {
+  return fetch(new URL(path, baseUrl), {
+    method,
+    headers: {
+      cookie: jar.header(),
+      "content-type": "application/json",
+      "x-csrf-token": await csrf(baseUrl, jar),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+async function markFixtures(tenantId: string, ids: string[]): Promise<void> {
+  const db = getAppContext().mongo.getDB();
+  await Promise.all([
+    db.collection("tenants").updateOne({ uuid: tenantId }, { $set: { testRunId } }),
+    db.collection("operators").updateMany({ tenantId }, { $set: { testRunId } }),
+    db.collection("users").updateMany({ tenantId }, { $set: { testRunId } }),
+    db.collection("audit_events").updateMany({ targetId: { $in: ids } }, { $set: { testRunId } }),
+  ]);
+}
+
+describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
+  beforeAll(async () => {
+    if (!Bun.env.MONGODB_URI || !Bun.env.MONGODB_DB || !Bun.env.TEST_TENANT_ID) {
+      throw new Error("Los tests requieren MONGODB_URI, MONGODB_DB y TEST_TENANT_ID exactos.");
+    }
+    const { startApi } = await import("@/index");
+    running = await startApi();
+    await getAppContext()
+      .mongo.getDB()
+      .collection("administrators")
+      .insertOne({
+        uuid: crypto.randomUUID(),
+        email: administratorEmail,
+        displayName: "API Test Administrator",
+        passwordHash: await Bun.password.hash(administratorPassword),
+        status: "active",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+        testRunId,
+      });
+  });
+
+  afterAll(async () => {
+    if (!running) return;
+    if (!testRunId.startsWith("api-test-")) {
+      throw new Error("Cleanup bloqueado: testRunId inválido.");
+    }
+    const db = getAppContext().mongo.getDB();
+    for (const collection of ["administrators", "tenants", "operators", "users", "audit_events"]) {
+      await db.collection(collection).deleteMany({ testRunId });
+    }
+    await db.collection("websocket_tickets").deleteMany({ testRunId });
+    await running.close();
+  });
+
+  test("covers health, auth, tenancy, actor isolation and one-use WS tickets", async () => {
+    const baseUrl = running?.server.url;
+    if (!baseUrl) throw new Error("API no iniciada.");
+
+    const live = await fetch(new URL("/health/live", baseUrl));
+    const ready = await fetch(new URL("/health/ready", baseUrl));
+    expect(live.status).toBe(200);
+    expect(ready.status).toBe(200);
+
+    const cors = await fetch(new URL("/health/live", baseUrl), {
+      headers: { origin: "https://client.example.test" },
+    });
+    expect(cors.headers.get("access-control-allow-origin")).toBe("https://client.example.test");
+    expect(cors.headers.get("access-control-allow-credentials")).toBe("true");
+
+    const adminJar = new CookieJar();
+    const loginResponse = await fetch(new URL("/auth/login", baseUrl), {
+      method: "POST",
+      headers: {
+        cookie: adminJar.header(),
+        "content-type": "application/json",
+        "x-csrf-token": await csrf(baseUrl, adminJar),
+      },
+      body: JSON.stringify({
+        actorKind: "administrator",
+        email: administratorEmail,
+        password: administratorPassword,
+      }),
+    });
+    adminJar.absorb(loginResponse.headers);
+    const login = AuthResponseSchema.parse(await jsonBody(loginResponse));
+    expect(login.data.actor.role).toBe("platform_admin");
+
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const ownerEmail = `${testRunId}-owner@example.test`;
+    const tenantResponse = await mutate(baseUrl, adminJar, "/tenants/create", {
+      name: `API Test ${suffix}`,
+      slug: `api-test-${suffix}`,
+      owner: {
+        email: ownerEmail,
+        displayName: "Test Owner",
+        password: ownerPassword,
+      },
+    });
+    expect(tenantResponse.status).toBe(201);
+    const tenant = TenantResponseSchema.parse(await jsonBody(tenantResponse)).data;
+    await markFixtures(tenant.uuid, [tenant.uuid, tenant.ownerOperatorId]);
+
+    const operatorResponse = await mutate(
+      baseUrl,
+      adminJar,
+      `/tenants/${tenant.uuid}/operators/create`,
+      {
+        email: `${testRunId}-operator@example.test`,
+        displayName: "Test Operator",
+        password: ownerPassword,
+      },
+    );
+    expect(operatorResponse.status).toBe(201);
+    const operator = OperatorResponseSchema.parse(await jsonBody(operatorResponse)).data;
+
+    const userEmail = `${testRunId}-user@example.test`;
+    const userResponse = await mutate(baseUrl, adminJar, `/tenants/${tenant.uuid}/users/create`, {
+      email: userEmail,
+      displayName: "Test User",
+      password: userPassword,
+    });
+    expect(userResponse.status).toBe(201);
+    const user = UserResponseSchema.parse(await jsonBody(userResponse)).data;
+    await markFixtures(tenant.uuid, [
+      tenant.uuid,
+      tenant.ownerOperatorId,
+      operator.uuid,
+      user.uuid,
+    ]);
+
+    const tenants = TenantListResponseSchema.parse(
+      await jsonBody(
+        await fetch(new URL("/tenants?limit=100", baseUrl), {
+          headers: { cookie: adminJar.header() },
+        }),
+      ),
+    );
+    expect(tenants.data.items.some((item) => item.uuid === tenant.uuid)).toBe(true);
+
+    const operators = OperatorListResponseSchema.parse(
+      await jsonBody(
+        await fetch(new URL(`/tenants/${tenant.uuid}/operators?limit=100`, baseUrl), {
+          headers: { cookie: adminJar.header() },
+        }),
+      ),
+    );
+    expect(operators.data.items.some((item) => item.uuid === operator.uuid)).toBe(true);
+
+    const users = UserListResponseSchema.parse(
+      await jsonBody(
+        await fetch(new URL(`/tenants/${tenant.uuid}/users?limit=100`, baseUrl), {
+          headers: { cookie: adminJar.header() },
+        }),
+      ),
+    );
+    expect(users.data.items.some((item) => item.uuid === user.uuid)).toBe(true);
+
+    const updatedResponse = await mutate(
+      baseUrl,
+      adminJar,
+      `/tenants/${tenant.uuid}/update`,
+      { status: "inactive", expectedVersion: 1 },
+      "PATCH",
+    );
+    expect(TenantResponseSchema.parse(await jsonBody(updatedResponse)).data.version).toBe(2);
+    await mutate(
+      baseUrl,
+      adminJar,
+      `/tenants/${tenant.uuid}/update`,
+      { status: "active", expectedVersion: 2 },
+      "PATCH",
+    );
+
+    const userJar = new CookieJar();
+    const userLoginResponse = await fetch(new URL("/auth/login", baseUrl), {
+      method: "POST",
+      headers: {
+        cookie: userJar.header(),
+        "content-type": "application/json",
+        "x-csrf-token": await csrf(baseUrl, userJar),
+      },
+      body: JSON.stringify({
+        actorKind: "user",
+        tenantSlug: tenant.slug,
+        email: userEmail,
+        password: userPassword,
+      }),
+    });
+    userJar.absorb(userLoginResponse.headers);
+    expect(AuthResponseSchema.parse(await jsonBody(userLoginResponse)).data.actor.uuid).toBe(
+      user.uuid,
+    );
+    const forbidden = await fetch(new URL(`/tenants/${crypto.randomUUID()}`, baseUrl), {
+      headers: { cookie: userJar.header() },
+    });
+    expect(forbidden.status).toBe(403);
+
+    const ticketResponse = await mutate(baseUrl, adminJar, "/auth/ws-tickets/create");
+    const ticketPayload = (await jsonBody(ticketResponse)) as {
+      data?: { ticket?: string };
+    };
+    const ticket = ticketPayload.data?.ticket;
+    expect(ticket).toBeString();
+    if (!ticket) throw new Error("Ticket no generado.");
+    await getAppContext()
+      .mongo.getDB()
+      .collection("websocket_tickets")
+      .updateOne({ "actor.email": administratorEmail }, { $set: { testRunId } });
+    expect((await getAppContext().tickets.consume(ticket)).uuid).toBe(login.data.actor.uuid);
+    await expect(getAppContext().tickets.consume(ticket)).rejects.toThrow();
+
+    const refreshResponse = await mutate(baseUrl, adminJar, "/auth/refresh");
+    adminJar.absorb(refreshResponse.headers);
+    expect(AuthResponseSchema.parse(await jsonBody(refreshResponse)).data.actor.uuid).toBe(
+      login.data.actor.uuid,
+    );
+    const logoutResponse = await mutate(baseUrl, adminJar, "/auth/logout");
+    adminJar.absorb(logoutResponse.headers);
+    expect(logoutResponse.status).toBe(200);
+    expect(
+      (
+        await fetch(new URL("/auth/me", baseUrl), {
+          headers: { cookie: adminJar.header() },
+        })
+      ).status,
+    ).toBe(401);
+  });
+});
