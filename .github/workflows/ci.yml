@@ -47,6 +47,9 @@ jobs:
       - name: Unit tests
         run: bun run test
 
+      - name: Repository tooling tests
+        run: bun run test:tools
+
       - name: Build web applications only
         run: ./build-all.sh
 

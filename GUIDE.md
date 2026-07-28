@@ -33,10 +33,22 @@ apps/webapp/.env.example
 apps/backoffice/.env.example
 ```
 
-Los ejemplos no son credenciales utilizables. Copiarlos a `.env` es opcional;
-en producción se recomienda inyectar las variables desde el mecanismo del
-despliegue. Bun carga `.env` de la app cuando el proceso se inicia desde ese
-workspace.
+Para crear o actualizar los cuatro archivos `.env` de forma interactiva:
+
+```bash
+bun run update:env
+```
+
+La herramienta permite elegir desarrollo, tests o producción. Enter conserva
+el valor existente o aplica el default indicado; los secretos internos nuevos
+se generan de forma criptográficamente aleatoria y no se muestran. Las
+variables adicionales de un `.env` existente se preservan. La API key de
+DeepSeek, el tenant autorizado para tests y otros datos que no pueden inferirse
+se informan como pendientes.
+
+Los ejemplos no son credenciales utilizables. En producción también se puede
+inyectar la configuración desde el mecanismo del despliegue. Bun carga `.env`
+de la app cuando el proceso se inicia desde ese workspace.
 
 ## 3. Estructura
 
@@ -69,6 +81,7 @@ compartible se mueve a `packages/*`; un package nunca importa `apps/*`.
 ```bash
 bun run dev            # coordina las cuatro apps
 bun run start          # exige builds Next existentes
+bun run update:env     # crea o actualiza los .env de cada app
 ./run-all.sh --build   # compila las webapps y luego inicia todo
 ./build-all.sh         # compila solo webapp y backoffice
 

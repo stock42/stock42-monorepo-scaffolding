@@ -9,6 +9,10 @@ El formato sigue una versión simplificada de
 
 ### Added
 
+- Se agregó `bun run update:env`, una CLI interactiva para crear o actualizar
+  los `.env` de las cuatro apps según el escenario de desarrollo, tests o
+  producción, con defaults contextuales, secretos ocultos y sincronizados,
+  preservación de configuración adicional y permisos `0600`.
 - Se agregó la interfaz entrante Telegram mediante `getUpdates`, offset durable,
   conversaciones por chat, runs idempotentes, comandos de estado/cancelación,
   entrega de respuestas y notificación de confirmations.

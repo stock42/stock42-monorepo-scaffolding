@@ -8,13 +8,13 @@ durable de agentes DeepSeek.
 
 ```bash
 bun install
-cp apps/api/.env.example apps/api/.env
-cp apps/agent/.env.example apps/agent/.env
+bun run update:env
 ./run-dev-all.sh
 ```
 
-Los valores de MongoDB deben apuntar a una base existente. Nunca se crea
-`.env.local`.
+`update:env` configura interactivamente desarrollo, tests o producción y crea
+el `.env` de cada app con defaults coherentes. Los valores de MongoDB deben
+apuntar a una base existente. Nunca se crea `.env.local`.
 
 ```bash
 ./build-all.sh       # compila solo webapp y backoffice
