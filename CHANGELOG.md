@@ -64,6 +64,8 @@ El formato sigue una versión simplificada de
 
 ### Changed
 
+- Se retiró `nginx/clinical.example.com` del conjunto de virtual hosts de
+  referencia.
 - Se definió el contrato obligatorio `build`/`start`/`dev` para todas las apps,
   los launchers raíz `build-all.sh`, `run-all.sh` y `run-dev-all.sh`, y la regla
   de compilar únicamente webapp y backoffice; API y agente ejecutan TypeScript
@@ -77,7 +79,7 @@ El formato sigue una versión simplificada de
 - La ausencia de `TELEGRAM_BOT_TOKEN` ahora mantiene el polling de Telegram
   deshabilitado aunque el script solicite habilitarlo; no se inicia el proceso
   `getUpdates`, health informa `disabled` y no se generan reintentos ni backoff.
-- Se restauraron las cuatro configuraciones Nginx de referencia originales,
+- Se restauraron las configuraciones Nginx de referencia originales,
   modificando únicamente sus nombres y dominios a valores `example.*`; se
   retiró la estructura de upstreams, snippets y configuración agregadora que no
   correspondía al material de referencia. Cada archivo vuelve a ser un virtual

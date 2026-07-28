@@ -471,12 +471,11 @@ mockea.
 
 ## 16. Nginx
 
-`nginx/` conserva cuatro virtual hosts autónomos basados en las configuraciones
+`nginx/` conserva tres virtual hosts autónomos basados en las configuraciones
 de referencia de VisionSanar:
 
 ```text
 example.com                 → 127.0.0.1:3740
-clinical.example.com        → 127.0.0.1:3741
 backoffice.example.com      → 127.0.0.1:3742
 api.example.com             → 127.0.0.1:5757
 ```
