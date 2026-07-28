@@ -1,8 +1,12 @@
 {
   "extends": "@stock42/typescript-config/base.json",
   "compilerOptions": {
+    "baseUrl": ".",
     "jsx": "react-jsx",
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "paths": {
+      "@stock42/ui/*": ["./src/*"]
+    },
     "types": ["bun"]
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"]

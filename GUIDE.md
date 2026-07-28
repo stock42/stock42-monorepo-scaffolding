@@ -288,6 +288,17 @@ Las apps fueron creadas con `bun create next-app@latest`, usan App Router y
 consumen `@stock42/ui` con estilo shadcn `base-nova`. Geist Sans y Mono, tokens
 graphite/blue y componentes compartidos forman el sistema visual.
 
+`packages/ui/src/components` contiene todo el catálogo `registry:ui`
+materializable de shadcn 4.16.0. El registry publica 61 entradas: 60 generan un
+componente `.tsx`; `form` es actualmente una entrada de compatibilidad vacía y
+los formularios se componen con `field.tsx`. El hook requerido por `sidebar`
+vive en `packages/ui/src/hooks`.
+
+Los componentes se agregan o actualizan siempre desde `packages/ui`, usando
+prioritariamente el MCP/registry oficial. No se generan copias dentro de
+`apps/webapp` o `apps/backoffice`. `@stock42/ui` exporta componentes y hooks por
+subpath.
+
 Los Route Handlers son BFF explícitos:
 
 ```text

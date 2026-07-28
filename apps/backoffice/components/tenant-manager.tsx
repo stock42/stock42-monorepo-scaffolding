@@ -137,10 +137,12 @@ export function TenantManager() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button asChild size="sm" variant="ghost">
-                        <Link href={`/tenants/${tenant.uuid}`}>
-                          Abrir <ArrowRight />
-                        </Link>
+                      <Button
+                        render={<Link href={`/tenants/${tenant.uuid}`} />}
+                        size="sm"
+                        variant="ghost"
+                      >
+                        Abrir <ArrowRight />
                       </Button>
                     </TableCell>
                   </TableRow>

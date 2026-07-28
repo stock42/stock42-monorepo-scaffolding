@@ -16,11 +16,9 @@ export default async function TenantPage({ params }: { params: Promise<{ id: str
   return (
     <div className="grid gap-7">
       <div>
-        <Button asChild size="sm" variant="ghost" className="-ml-3 mb-4">
-          <Link href="/tenants">
-            <ArrowLeft />
-            Volver a tenants
-          </Link>
+        <Button render={<Link href="/tenants" />} size="sm" variant="ghost" className="-ml-3 mb-4">
+          <ArrowLeft />
+          Volver a tenants
         </Button>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-3xl font-semibold tracking-[-0.035em]">Personas del tenant</h1>

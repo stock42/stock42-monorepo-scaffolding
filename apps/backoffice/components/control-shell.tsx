@@ -60,15 +60,13 @@ export function ControlShell({
           {navigation.map(({ href, label, icon: Icon }) => (
             <Button
               key={href}
-              asChild
+              render={<Link href={href} />}
               variant="ghost"
               className="justify-start text-slate-300 hover:bg-white/8 hover:text-white"
             >
-              <Link href={href}>
-                <Icon />
-                {label}
-                <ChevronRight className="ml-auto size-3.5 opacity-50" />
-              </Link>
+              <Icon />
+              {label}
+              <ChevronRight className="ml-auto size-3.5 opacity-50" />
             </Button>
           ))}
         </nav>

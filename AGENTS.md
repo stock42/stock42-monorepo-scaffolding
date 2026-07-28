@@ -44,6 +44,10 @@ se informa el error exacto sin alterar credenciales.
 - `apps/api` y `apps/agent` ejecutan TypeScript con Bun. Su script `build`
   permanece como no-op exitoso y nunca genera `dist`.
 - Toda webapp usa Next.js, App Router y shadcn.
+- El catálogo completo de componentes shadcn `base-nova` vive en
+  `packages/ui/src/components`. No instalar componentes shadcn dentro de una
+  app; toda incorporación o actualización se hace en `@stock42/ui` usando
+  prioritariamente el MCP/registry oficial.
 - Los Route Handlers son explícitos. Se prohíben `pages/api`, `[...slug]` y
   `[[...slug]]`.
 - La API usa la versión publicada de `s42-core`.

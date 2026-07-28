@@ -29,6 +29,11 @@ El formato sigue una versión simplificada de
   central de versiones, límites entre apps y paquetes, configuración compartida
   de TypeScript/ESLint y los paquetes `contracts`, `ui`, `api-client`,
   `typescript-config` y `eslint-config`.
+- Se instaló en `packages/ui/src/components` el catálogo completo materializable
+  de shadcn 4.16.0 para `base-nova`: 60 componentes compartidos, el hook
+  requerido por `sidebar`, sus dependencias y tokens de estilo. La entrada
+  `form` del registry actual es un marcador vacío y se resuelve mediante
+  `field`.
 - Se incorporaron `apps/webapp` y `apps/backoffice` sobre Next.js App Router,
   BFF mediante Route Handlers explícitos, shadcn `base-nova`, UI compartida,
   autenticación por cookies y bases funcionales para usuarios, tenants,
