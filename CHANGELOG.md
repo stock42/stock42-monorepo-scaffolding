@@ -72,6 +72,10 @@ El formato sigue una versión simplificada de
 
 ### Changed
 
+- Se actualizó la API de `s42-core@3.0.10` a `3.0.13` y se migró `/ws` al
+  contrato nativo `WebSocketController`/`WebSocketControllers`, conservando el
+  listener HTTP compartido, los tickets de un uso, el aislamiento tenant, los
+  límites del gateway y un handshake real en la suite de integración.
 - Se alinearon los puertos configurables de WebApp (`WEBAPP_PORT=3820`),
   Backoffice (`BACKOFFICE_PORT=3821`) y API (`API_PORT=3822`) con sus virtual
   hosts Nginx, el generador de `.env`, los defaults runtime, Playwright y CI.

@@ -57,9 +57,10 @@ No crear `.env.local`.
 1. Valida la configuración con Zod.
 2. Ejecuta `runBoot`.
 3. Descubre los módulos de `src/modules` mediante `s42-core`.
-4. Registra los controllers y hooks.
-5. Crea un único `Bun.serve`.
-6. Comparte ese listener con `/ws`.
+4. Registra los controllers y hooks HTTP.
+5. Registra `/ws` con `WebSocketController` y `WebSocketControllers` de
+   `s42-core`.
+6. Crea un único `Bun.serve` y le entrega el dispatcher WebSocket nativo.
 7. Inicia el bridge de eventos y el heartbeat WebSocket.
 8. Atiende `SIGINT` y `SIGTERM`, detiene timers y sockets, cierra MongoDB y
    limpia el registro de dependencias.
@@ -70,6 +71,7 @@ El listener tiene:
 - body máximo de 12 MiB;
 - CORS y rate limit antes del despacho;
 - gateway binario explícito para uploads y artifacts;
+- upgrade y lifecycle WebSocket administrados por `s42-core`;
 - errores sanitizados con `errorId`;
 - `Cache-Control: no-store` y `X-Content-Type-Options: nosniff`.
 
@@ -229,6 +231,12 @@ Flujo:
 4. El cliente se suscribe a `agent:run:<uuid>`.
 5. La API verifica el run contra el runtime del agente.
 6. El bridge hace replay desde el cursor durable y publica eventos del tenant.
+
+La ruta se declara como `WebSocketController<SocketData>` y se agrega a un
+registro `WebSocketControllers`. La API conserva la propiedad del
+`Bun.serve` para aplicar CORS, rate limiting y gateways binarios al tráfico
+HTTP, mientras s42-core resuelve el routing, el upgrade y el lifecycle
+WebSocket nativo sobre ese mismo listener.
 
 Límites vigentes:
 

@@ -593,8 +593,9 @@ path. No se decide acceso mediante coincidencias parciales inseguras.
 - La secuencia crítica de boot no depende del campo metadata `dependencies` de
   los módulos, porque ese campo no impone orden de inicialización.
 - No se intenta importar el `MongoDBStorage` interno de `s42-core`.
-- El WebSocket usa directamente la capacidad de `Bun.serve` dentro de la API,
-  respetando el mismo listener.
+- El WebSocket usa `WebSocketController` y `WebSocketControllers` nativos de
+  s42-core sobre el `Bun.serve` propiedad de la API, respetando el mismo
+  listener y los gateways HTTP existentes.
 - Se encapsulan o corrigen en el borde de la aplicación las limitaciones
   conocidas de CORS y cierre del servidor, sin forking del framework.
 
@@ -1228,7 +1229,8 @@ El servidor interno del agente:
 
 ### 20.1 Endpoint
 
-`/ws` vive en `apps/api` y usa el mismo `Bun.serve` y puerto que HTTP.
+`/ws` vive en `apps/api`, se registra con los controllers WebSocket nativos de
+s42-core y usa el mismo `Bun.serve` y puerto que HTTP.
 
 Flujo:
 

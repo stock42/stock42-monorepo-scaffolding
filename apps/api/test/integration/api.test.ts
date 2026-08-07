@@ -12,6 +12,7 @@ import {
   UserListResponseSchema,
   UserResponseSchema,
 } from "@stock42/contracts/tenancy";
+import { WebSocketServerMessageSchema } from "@stock42/contracts/websocket";
 import type { RunningApi } from "@/index";
 import { getAppContext } from "@/context";
 
@@ -84,6 +85,41 @@ async function markFixtures(tenantId: string, ids: string[]): Promise<void> {
     db.collection("users").updateMany({ tenantId }, { $set: { testRunId } }),
     db.collection("audit_events").updateMany({ targetId: { $in: ids } }, { $set: { testRunId } }),
   ]);
+}
+
+async function receiveFirstWebSocketMessage(url: URL): Promise<{
+  socket: WebSocket;
+  data: unknown;
+}> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url);
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error("Timeout esperando el primer mensaje WebSocket."));
+    }, 2_000);
+
+    socket.addEventListener(
+      "message",
+      (event) => {
+        clearTimeout(timeout);
+        try {
+          resolve({ socket, data: JSON.parse(String(event.data)) });
+        } catch (cause) {
+          socket.close();
+          reject(cause);
+        }
+      },
+      { once: true },
+    );
+    socket.addEventListener(
+      "error",
+      () => {
+        clearTimeout(timeout);
+        reject(new Error("Falló la conexión WebSocket."));
+      },
+      { once: true },
+    );
+  });
 }
 
 describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
@@ -335,7 +371,11 @@ describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
       .mongo.getDB()
       .collection("websocket_tickets")
       .updateOne({ "actor.email": administratorEmail }, { $set: { testRunId } });
-    expect((await getAppContext().tickets.consume(ticket)).uuid).toBe(login.data.actor.uuid);
+    const websocketUrl = new URL(`/ws?ticket=${encodeURIComponent(ticket)}`, baseUrl);
+    websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
+    const websocket = await receiveFirstWebSocketMessage(websocketUrl);
+    expect(WebSocketServerMessageSchema.parse(websocket.data).type).toBe("ready");
+    websocket.socket.close();
     await expect(getAppContext().tickets.consume(ticket)).rejects.toThrow();
 
     const refreshResponse = await mutate(baseUrl, adminJar, "/auth/refresh");

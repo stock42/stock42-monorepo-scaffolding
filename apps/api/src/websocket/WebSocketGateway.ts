@@ -4,6 +4,7 @@ import {
   WebSocketClientMessageSchema,
   type WebSocketServerMessage,
 } from "@stock42/contracts/websocket";
+import { WebSocketController, WebSocketControllers, type WebSocketMessage } from "s42-core";
 import type { ApiConfig } from "@/config";
 import { resolveCorsOrigin } from "@/http/cors";
 import type { AgentClient } from "@/modules/agent/services/AgentClient";
@@ -24,7 +25,7 @@ export class WebSocketGateway {
   private readonly bridge: AgentEventBridge;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
 
-  readonly handler: Bun.WebSocketHandler<SocketData>;
+  readonly controllers: WebSocketControllers;
 
   constructor(
     private readonly tickets: WebSocketTicketService,
@@ -32,10 +33,9 @@ export class WebSocketGateway {
     private readonly config: ApiConfig,
   ) {
     this.bridge = new AgentEventBridge(agentClient, (event) => this.publish(event));
-    this.handler = {
-      maxPayloadLength: 64 * 1024,
-      backpressureLimit: 256 * 1024,
-      closeOnBackpressureLimit: true,
+    const controller = new WebSocketController<SocketData>({
+      path: "/ws",
+      upgrade: ({ request }) => this.authorizeUpgrade(request),
       open: (socket) => {
         this.sockets.add(socket);
         this.send(socket, {
@@ -43,79 +43,7 @@ export class WebSocketGateway {
           connectionId: socket.data.connectionId,
         });
       },
-      message: async (socket, raw) => {
-        socket.data.lastSeenAt = Date.now();
-        if (!this.consumeMessageRate(socket)) {
-          socket.close(1008, "Rate limit");
-          return;
-        }
-        const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
-        let payload: unknown;
-        try {
-          payload = JSON.parse(text);
-        } catch {
-          this.send(socket, { type: "error", code: "INVALID_JSON", message: "Mensaje inválido." });
-          return;
-        }
-        const message = WebSocketClientMessageSchema.safeParse(payload);
-        if (!message.success) {
-          this.send(socket, {
-            type: "error",
-            code: "INVALID_MESSAGE",
-            message: "Mensaje fuera de contrato.",
-          });
-          return;
-        }
-
-        if (message.data.type === "ping") {
-          this.send(socket, { type: "pong", requestId: message.data.requestId });
-          return;
-        }
-        if (message.data.type === "unsubscribe") {
-          this.unsubscribe(socket, message.data.channel);
-          this.send(socket, {
-            type: "ack",
-            requestId: message.data.requestId,
-            channel: message.data.channel,
-          });
-          return;
-        }
-        if (socket.data.channels.size >= 20) {
-          this.send(socket, {
-            type: "error",
-            requestId: message.data.requestId,
-            code: "TOO_MANY_CHANNELS",
-            message: "Se alcanzó el máximo de canales.",
-          });
-          return;
-        }
-
-        const runId = message.data.channel.slice("agent:run:".length);
-        try {
-          await this.agentClient.getRun(
-            runId,
-            socket.data.actor.tenantId ?? "",
-            socket.data.actor.uuid,
-          );
-        } catch {
-          this.send(socket, {
-            type: "error",
-            requestId: message.data.requestId,
-            code: "FORBIDDEN_CHANNEL",
-            message: "Canal no autorizado.",
-          });
-          return;
-        }
-        if (!socket.data.channels.has(message.data.channel)) {
-          socket.data.channels.add(message.data.channel);
-          this.bridge.track(runId, socket.data.actor.tenantId ?? "", message.data.cursor ?? 0);
-        }
-        this.send(socket, {
-          type: "ack",
-          requestId: message.data.requestId,
-          channel: message.data.channel,
-        });
-      },
+      message: (socket, raw) => this.onMessage(socket, raw),
       close: (socket) => {
         for (const channel of socket.data.channels) this.unsubscribe(socket, channel);
         this.sockets.delete(socket);
@@ -123,7 +51,12 @@ export class WebSocketGateway {
       pong: (socket) => {
         socket.data.lastSeenAt = Date.now();
       },
-    };
+    });
+    this.controllers = new WebSocketControllers([controller], {
+      maxPayloadLength: 64 * 1024,
+      backpressureLimit: 256 * 1024,
+      closeOnBackpressureLimit: true,
+    });
   }
 
   start(): void {
@@ -145,10 +78,10 @@ export class WebSocketGateway {
     this.bridge.stop();
     if (this.heartbeat) clearInterval(this.heartbeat);
     this.heartbeat = null;
-    for (const socket of this.sockets) socket.close(1001, "Server shutdown");
+    this.controllers.closeAll(1001, "Server shutdown");
   }
 
-  async upgrade(request: Request, server: Bun.Server<SocketData>): Promise<Response | undefined> {
+  private async authorizeUpgrade(request: Request) {
     const origin = request.headers.get("origin");
     if (origin && !resolveCorsOrigin(request, this.config.corsOrigins)) {
       return new Response("Origin forbidden", { status: 403 });
@@ -157,7 +90,7 @@ export class WebSocketGateway {
     if (!ticket) return new Response("Ticket required", { status: 401 });
     try {
       const actor = await this.tickets.consume(ticket);
-      const upgraded = server.upgrade(request, {
+      return {
         data: {
           connectionId: crypto.randomUUID(),
           actor,
@@ -166,11 +99,87 @@ export class WebSocketGateway {
           messageWindowStartedAt: Date.now(),
           messagesInWindow: 0,
         },
-      });
-      return upgraded ? undefined : new Response("Upgrade failed", { status: 400 });
+      };
     } catch {
       return new Response("Ticket invalid", { status: 401 });
     }
+  }
+
+  private async onMessage(
+    socket: Bun.ServerWebSocket<SocketData>,
+    raw: WebSocketMessage,
+  ): Promise<void> {
+    socket.data.lastSeenAt = Date.now();
+    if (!this.consumeMessageRate(socket)) {
+      socket.close(1008, "Rate limit");
+      return;
+    }
+    const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
+    let payload: unknown;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      this.send(socket, { type: "error", code: "INVALID_JSON", message: "Mensaje inválido." });
+      return;
+    }
+    const message = WebSocketClientMessageSchema.safeParse(payload);
+    if (!message.success) {
+      this.send(socket, {
+        type: "error",
+        code: "INVALID_MESSAGE",
+        message: "Mensaje fuera de contrato.",
+      });
+      return;
+    }
+
+    if (message.data.type === "ping") {
+      this.send(socket, { type: "pong", requestId: message.data.requestId });
+      return;
+    }
+    if (message.data.type === "unsubscribe") {
+      this.unsubscribe(socket, message.data.channel);
+      this.send(socket, {
+        type: "ack",
+        requestId: message.data.requestId,
+        channel: message.data.channel,
+      });
+      return;
+    }
+    if (socket.data.channels.size >= 20) {
+      this.send(socket, {
+        type: "error",
+        requestId: message.data.requestId,
+        code: "TOO_MANY_CHANNELS",
+        message: "Se alcanzó el máximo de canales.",
+      });
+      return;
+    }
+
+    const runId = message.data.channel.slice("agent:run:".length);
+    try {
+      await this.agentClient.getRun(
+        runId,
+        socket.data.actor.tenantId ?? "",
+        socket.data.actor.uuid,
+      );
+    } catch {
+      this.send(socket, {
+        type: "error",
+        requestId: message.data.requestId,
+        code: "FORBIDDEN_CHANNEL",
+        message: "Canal no autorizado.",
+      });
+      return;
+    }
+    if (!socket.data.channels.has(message.data.channel)) {
+      socket.data.channels.add(message.data.channel);
+      this.bridge.track(runId, socket.data.actor.tenantId ?? "", message.data.cursor ?? 0);
+    }
+    this.send(socket, {
+      type: "ack",
+      requestId: message.data.requestId,
+      channel: message.data.channel,
+    });
   }
 
   private publish(event: AgentRunEvent): void {

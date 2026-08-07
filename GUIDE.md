@@ -146,15 +146,16 @@ consumidores deben etiquetar fixtures con un `testRunId`, limitarlos al
 
 ## 7. API y s42-core
 
-La API fija `s42-core@3.0.10`. `Modules` descubre
-`src/modules/**/__module__.ts` y `RouteControllers` despacha sus controllers.
-El listener pertenece a la app para compartir:
+La API fija `s42-core@3.0.13`. `Modules` descubre
+`src/modules/**/__module__.ts`, `RouteControllers` despacha sus controllers y
+`WebSocketController`/`WebSocketControllers` administran la ruta `/ws`, su
+upgrade y lifecycle nativos. El listener pertenece a la app para compartir:
 
 - callback HTTP de s42-core;
 - CORS corregido;
 - rate limiting;
 - gateways binarios;
-- `/ws` de Bun.
+- el dispatcher WebSocket nativo de s42-core.
 
 El package publicado de s42-core expone source y actualmente no pasa con
 `noUncheckedIndexedAccess`; por eso solo `apps/api/tsconfig.json` desactiva esa
@@ -449,7 +450,8 @@ El baseline no crea una abstracción S3 hasta que un proyecto la necesite.
 
 `POST /auth/ws-tickets/create` genera un ticket firmado, hasheado en MongoDB,
 con TTL de 60 segundos y consumo atómico de una vez. `/ws` verifica ticket y
-Origin antes del upgrade.
+Origin desde el callback `upgrade` del `WebSocketController` antes de que
+s42-core acepte la conexión sobre el mismo listener HTTP.
 
 El gateway ofrece:
 

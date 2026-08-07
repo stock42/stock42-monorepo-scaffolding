@@ -16,7 +16,7 @@
   "dependencies": {
     "@stock42/contracts": "workspace:*",
     "mongodb": "6.21.0",
-    "s42-core": "3.0.10",
+    "s42-core": "3.0.13",
     "zod": "catalog:"
   },
   "devDependencies": {

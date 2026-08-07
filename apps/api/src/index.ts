@@ -1,14 +1,13 @@
 import { fileURLToPath } from "node:url";
-import { Dependencies, Modules, RouteControllers } from "s42-core";
+import { Dependencies, Modules, RouteControllers, type WebSocketData } from "s42-core";
 import { runBoot } from "@/boot";
 import { loadConfig } from "@/config";
 import { errorResponse } from "@/errors/handler";
 import { corsPreflight, resolveCorsOrigin, withCors } from "@/http/cors";
 import { fileGateway } from "@/modules/files/gateway";
-import type { SocketData } from "@/websocket/WebSocketGateway";
 
 export type RunningApi = {
-  server: Bun.Server<SocketData>;
+  server: Bun.Server<WebSocketData>;
   close: () => Promise<void>;
 };
 
@@ -23,17 +22,18 @@ export async function startApi(): Promise<RunningApi> {
   const routeCallback = routeControllers.getCallback(modules.getHooks());
   const sweepTimer = setInterval(() => context.rateLimiter.sweep(), 60_000);
 
-  const server = Bun.serve<SocketData>({
+  const server = Bun.serve<WebSocketData>({
     hostname: config.host,
     port: config.port,
     idleTimeout: 30,
     maxRequestBodySize: 12 * 1024 * 1024,
     development: config.environment !== "production",
-    websocket: context.websocket.handler,
+    websocket: context.websocket.controllers.getHandler(),
     async fetch(request, bunServer) {
       const url = new URL(request.url);
-      if (url.pathname === "/ws") {
-        return context.websocket.upgrade(request, bunServer);
+      const upgrade = await context.websocket.controllers.tryUpgrade(request, bunServer);
+      if (upgrade.matched) {
+        return upgrade.response;
       }
 
       const preflight = corsPreflight(request, config.corsOrigins);
