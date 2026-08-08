@@ -9,6 +9,14 @@ El formato sigue una versión simplificada de
 
 ### Added
 
+- Se reescribió `README.md` como presentación integral del scaffold agéntico:
+  propuesta de valor, arquitectura, cobertura funcional, stack, flujo durable
+  de runs, seguridad, quick start, guía de extensión, operación, límites reales
+  y mapa de documentación para desarrolladores que creen un producto nuevo.
+- Se agregó `docs/PUBLICATION.md` con la auditoría de exposición, bloqueos P0,
+  decisiones de licencia/gobierno, archivos comunitarios, gates, ensayo desde un
+  clon limpio, configuración recomendada de GitHub y runbook para convertir el
+  repositorio en un template público sin confundir push con visibilidad.
 - Se agregó `NEWERA.md` con un análisis integral del monorepo y un backlog
   priorizado de correcciones, mejoras y nuevas funcionalidades para seguridad,
   autorización, WebSocket nativo de `s42-core`, runtime agéntico, producto,
