@@ -9,6 +9,10 @@ El formato sigue una versión simplificada de
 
 ### Added
 
+- Se agregó `NEWERA.md` con un análisis integral del monorepo y un backlog
+  priorizado de correcciones, mejoras y nuevas funcionalidades para seguridad,
+  autorización, WebSocket nativo de `s42-core`, runtime agéntico, producto,
+  operación, testing, CI y escalabilidad opcional.
 - Se agregó el bootstrap idempotente del administrador de plataforma: la API
   exige `DEFAULT_ADMIN_EMAIL` y `DEFAULT_ADMIN_PASSWORD`, crea la cuenta al
   arrancar si el email no existe y permite ingresar con esas credenciales desde
