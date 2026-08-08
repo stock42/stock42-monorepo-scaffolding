@@ -65,7 +65,7 @@ export async function runBoot(config: ApiConfig): Promise<AppContext> {
   const rateLimiter = new RateLimiter(config.rateLimit.enabled);
   const auth = new AuthService({ config, administrators, tenants, operators, users });
   const tenancy = new TenancyService(tenants, operators, users, audit);
-  const websocket = new WebSocketGateway(tickets, agentClient, config);
+  const websocket = new WebSocketGateway(tickets, agentClient, auth, config);
 
   const context: AppContext = {
     config,
@@ -94,9 +94,12 @@ export async function runBoot(config: ApiConfig): Promise<AppContext> {
     await audit.ensureIndexes();
     await tickets.ensureIndexes();
   });
-  await step("default-administrator", () =>
-    ensureDefaultAdministrator(config.defaultAdministrator, administrators),
-  );
+  const defaultAdministrator = config.defaultAdministrator;
+  if (defaultAdministrator) {
+    await step("default-administrator", () =>
+      ensureDefaultAdministrator(defaultAdministrator, administrators),
+    );
+  }
   await step("test-seeds", () => runTestSeeds(context));
   context.ready = true;
   return context;

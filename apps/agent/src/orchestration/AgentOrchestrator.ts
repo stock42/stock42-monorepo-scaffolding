@@ -7,11 +7,26 @@ import type {
   MessageDocument,
   RunDocument,
   ToolDefinition,
+  ToolContext,
 } from "@/runtime/contracts/types";
-import type { AgentStore } from "@/runtime/store/AgentStore";
+import { AgentAttemptInactiveError, type AgentStore } from "@/runtime/store/AgentStore";
 import type { ToolRegistry } from "@/tools/registry/ToolRegistry";
 
 class WaitingForConfirmation extends Error {}
+
+function boundedSignal(parent: AbortSignal, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error("tool_timeout")), timeoutMs);
+  const abort = () => controller.abort(parent.reason);
+  parent.addEventListener("abort", abort, { once: true });
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timeout);
+      parent.removeEventListener("abort", abort);
+    },
+  };
+}
 
 export class AgentOrchestrator {
   private readonly deepseek: DeepSeekClient;
@@ -25,30 +40,41 @@ export class AgentOrchestrator {
     this.deepseek = new DeepSeekClient(config.deepseek);
   }
 
-  async execute(runId: string): Promise<void> {
+  async execute(runId: string, processId: string, signal: AbortSignal): Promise<void> {
     const run = await this.requireRun(runId);
     this.manifests.get(run.manifest).inputSchema.parse(run.input);
     const heartbeat = setInterval(
-      () => void this.store.heartbeat(runId),
+      () => void this.store.heartbeat(runId, processId).catch(() => undefined),
       Math.max(1_000, this.config.runtime.heartbeatMs),
     );
 
     try {
-      await this.resumeResolvedConfirmation(run);
-      await this.loop(await this.requireRun(runId));
+      await this.resumeResolvedConfirmation(run, processId, signal);
+      await this.loop(await this.requireRun(runId), processId, signal);
     } catch (cause) {
       if (cause instanceof WaitingForConfirmation) return;
       const latest = await this.requireRun(runId);
       if (latest.status === "cancel_requested") {
-        await this.store.transition(runId, "cancelled", {
-          terminalReason: "cancelled_by_actor",
-        });
+        await this.store.transition(
+          runId,
+          "cancelled",
+          {
+            terminalReason: "cancelled_by_actor",
+          },
+          processId,
+        );
         return;
       }
+      if (cause instanceof AgentAttemptInactiveError || latest.terminationRequestedAt) throw cause;
       if (!["waiting", "succeeded", "failed", "cancelled"].includes(latest.status)) {
-        await this.store.transition(runId, "failed", {
-          terminalReason: cause instanceof Error ? cause.message.slice(0, 240) : "runtime_error",
-        });
+        await this.store.transition(
+          runId,
+          "failed",
+          {
+            terminalReason: cause instanceof Error ? cause.message.slice(0, 240) : "runtime_error",
+          },
+          processId,
+        );
       }
       throw cause;
     } finally {
@@ -56,7 +82,7 @@ export class AgentOrchestrator {
     }
   }
 
-  private async loop(run: RunDocument): Promise<void> {
+  private async loop(run: RunDocument, processId: string, signal: AbortSignal): Promise<void> {
     const storedMessages = await this.store.messagesForConversation(
       run.conversationId,
       run.tenantId,
@@ -71,8 +97,8 @@ export class AgentOrchestrator {
     ];
 
     for (let step = 0; step < 12; step += 1) {
-      await this.ensureNotCancelled(run.uuid);
-      const assistant = await this.deepseek.complete(messages, this.tools.list());
+      await this.assertActive(run.uuid, processId, signal);
+      const assistant = await this.deepseek.complete(messages, this.tools.list(), signal);
       const stored: MessageDocument = {
         uuid: crypto.randomUUID(),
         conversationId: run.conversationId,
@@ -97,15 +123,20 @@ export class AgentOrchestrator {
       if (!assistant.tool_calls?.length) {
         const answer = assistant.content?.trim();
         if (!answer) throw new Error("DeepSeek devolvió una respuesta vacía.");
-        await this.store.transition(run.uuid, "succeeded", {
-          output: { answer },
-          terminalReason: null,
-        });
+        await this.store.transition(
+          run.uuid,
+          "succeeded",
+          {
+            output: { answer },
+            terminalReason: null,
+          },
+          processId,
+        );
         return;
       }
 
       for (const toolCall of assistant.tool_calls) {
-        const result = await this.executeTool(run, toolCall);
+        const result = await this.executeTool(run, processId, signal, toolCall);
         if (result === undefined) throw new WaitingForConfirmation();
         const toolMessage: MessageDocument = {
           uuid: crypto.randomUUID(),
@@ -123,13 +154,15 @@ export class AgentOrchestrator {
         await this.store.addMessage(toolMessage);
         messages.push(this.toProviderMessage(toolMessage));
       }
-      await this.store.heartbeat(run.uuid, true);
+      await this.store.heartbeat(run.uuid, processId, true);
     }
     throw new Error("Se alcanzó el máximo de pasos del agente.");
   }
 
   private async executeTool(
     run: RunDocument,
+    processId: string,
+    signal: AbortSignal,
     toolCall: {
       id: string;
       type: "function";
@@ -162,7 +195,13 @@ export class AgentOrchestrator {
       actionClass: tool.actionClass,
     });
 
+    const context = this.toolContext(run, processId, signal);
+    await context.assertActive();
+
     if (tool.actionClass === "critical") {
+      const preview = tool.confirmationPreview
+        ? await tool.confirmationPreview(parsedInput.data, context)
+        : null;
       await this.store.createConfirmation({
         runId: run.uuid,
         tenantId: run.tenantId,
@@ -170,43 +209,75 @@ export class AgentOrchestrator {
         toolName: tool.name,
         input: parsedInput.data,
         inputHash: createHash("sha256").update(JSON.stringify(parsedInput.data)).digest("hex"),
+        preview,
         toolCallId: toolCall.id,
         expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
       });
-      await this.store.transition(run.uuid, "waiting", {
-        processId: null,
-        pid: null,
-      });
+      await this.store.transition(
+        run.uuid,
+        "waiting",
+        {
+          processId: null,
+          pid: null,
+        },
+        processId,
+      );
       return undefined;
     }
-    return this.performTool(run, tool, parsedInput.data, toolCall.id);
+    return this.performTool(run, processId, signal, tool, parsedInput.data, toolCall.id);
   }
 
   private async performTool(
     run: RunDocument,
+    processId: string,
+    processSignal: AbortSignal,
     tool: ToolDefinition,
     input: unknown,
     toolCallId: string,
   ): Promise<unknown> {
-    const output = await Promise.race([
-      tool.execute(input, { run, actorRole: run.actorRole }),
-      new Promise<never>((_resolve, reject) =>
-        setTimeout(() => reject(new Error(`Tool timeout: ${tool.name}`)), tool.timeoutMs),
-      ),
-    ]);
-    const parsed = tool.outputSchema.parse(output);
-    await this.store.appendEvent(run.uuid, "tool.completed", {
-      toolName: tool.name,
+    const inputHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    const claim = await this.store.beginToolExecution({
+      run,
+      processId,
       toolCallId,
-      ok: true,
+      toolName: tool.name,
+      inputHash,
+      idempotent: tool.idempotent,
     });
-    return { ok: true, data: parsed };
+    if (claim.kind === "cached") return claim.output;
+
+    const bounded = boundedSignal(processSignal, tool.timeoutMs);
+    const context = this.toolContext(run, processId, bounded.signal);
+    try {
+      const output = await tool.execute(input, context);
+      const parsed = tool.outputSchema.parse(output);
+      const result = { ok: true, data: parsed };
+      await this.store.completeToolExecution(claim.execution.uuid, processId, result);
+      await this.store.appendEvent(run.uuid, "tool.completed", {
+        toolName: tool.name,
+        toolCallId,
+        ok: true,
+      });
+      return result;
+    } catch (cause) {
+      await this.store.failToolExecution(claim.execution.uuid, processId, cause);
+      if (bounded.signal.aborted && !processSignal.aborted) {
+        throw new Error(`Tool timeout: ${tool.name}`);
+      }
+      throw cause;
+    } finally {
+      bounded.cleanup();
+    }
   }
 
-  private async resumeResolvedConfirmation(run: RunDocument): Promise<void> {
+  private async resumeResolvedConfirmation(
+    run: RunDocument,
+    processId: string,
+    signal: AbortSignal,
+  ): Promise<void> {
     const confirmation = await this.store.nextResolvedConfirmation(run.uuid);
     if (!confirmation) return;
-    const result = await this.confirmationResult(run, confirmation);
+    const result = await this.confirmationResult(run, processId, signal, confirmation);
     await this.store.addMessage({
       uuid: crypto.randomUUID(),
       conversationId: run.conversationId,
@@ -225,6 +296,8 @@ export class AgentOrchestrator {
 
   private async confirmationResult(
     run: RunDocument,
+    processId: string,
+    signal: AbortSignal,
     confirmation: ConfirmationDocument,
   ): Promise<unknown> {
     if (confirmation.status !== "approved") {
@@ -232,7 +305,7 @@ export class AgentOrchestrator {
     }
     const tool = this.tools.get(confirmation.toolName);
     const input = tool.inputSchema.parse(confirmation.input);
-    return this.performTool(run, tool, input, confirmation.toolCallId);
+    return this.performTool(run, processId, signal, tool, input, confirmation.toolCallId);
   }
 
   private toProviderMessage(message: MessageDocument): DeepSeekMessage {
@@ -255,9 +328,21 @@ export class AgentOrchestrator {
     return { role: message.role, content: message.content };
   }
 
-  private async ensureNotCancelled(runId: string): Promise<void> {
-    const run = await this.requireRun(runId);
-    if (run.status === "cancel_requested") throw new Error("cancel_requested");
+  private toolContext(run: RunDocument, processId: string, signal: AbortSignal): ToolContext {
+    return {
+      run,
+      actorRole: run.actorRole,
+      processId,
+      signal,
+      assertActive: () => this.assertActive(run.uuid, processId, signal),
+    };
+  }
+
+  private async assertActive(runId: string, processId: string, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) {
+      throw signal.reason instanceof Error ? signal.reason : new Error("agent_process_aborted");
+    }
+    await this.store.assertActiveAttempt(runId, processId);
   }
 
   private async requireRun(runId: string): Promise<RunDocument> {

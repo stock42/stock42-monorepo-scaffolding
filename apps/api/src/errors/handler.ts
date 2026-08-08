@@ -31,6 +31,14 @@ export function errorResponse(cause: unknown, metadata: Record<string, unknown> 
       message: cause.message,
       metadata: safeMetadata(metadata),
     });
+    const headers = new Headers();
+    if (cause.status === 429) {
+      const retryAfter = (cause.details as { retryAfterSeconds?: unknown } | undefined)
+        ?.retryAfterSeconds;
+      if (typeof retryAfter === "number" && Number.isFinite(retryAfter)) {
+        headers.set("Retry-After", String(Math.max(1, Math.ceil(retryAfter))));
+      }
+    }
     return Response.json(
       {
         ok: false,
@@ -41,7 +49,7 @@ export function errorResponse(cause: unknown, metadata: Record<string, unknown> 
           ...(cause.details === undefined ? {} : { details: cause.details }),
         },
       },
-      { status: cause.status },
+      { status: cause.status, headers },
     );
   }
 

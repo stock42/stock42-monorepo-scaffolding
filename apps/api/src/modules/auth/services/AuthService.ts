@@ -72,12 +72,16 @@ export class AuthService {
     return verifyToken(token, "access", this.dependencies.config.auth.accessSecret);
   }
 
+  async authenticateActive(headers: Headers): Promise<TokenClaims> {
+    const claims = await this.authenticate(headers);
+    return { ...claims, actor: await this.revalidateActor(claims.actor) };
+  }
+
   async authenticateRefresh(headers: Headers): Promise<TokenClaims> {
     const token = parseCookies(headers.get("cookie")).get(REFRESH_COOKIE);
     if (!token) throw new HttpError(401, "UNAUTHENTICATED", "Refresh requerido.");
     const claims = await verifyToken(token, "refresh", this.dependencies.config.auth.refreshSecret);
-    await this.ensureActive(claims.actor);
-    return claims;
+    return { ...claims, actor: await this.revalidateActor(claims.actor) };
   }
 
   async currentCsrfContext(headers: Headers): Promise<string | null> {
@@ -85,27 +89,37 @@ export class AuthService {
       return (await this.authenticateRefresh(headers)).sid;
     } catch {
       try {
-        return (await this.authenticate(headers)).sid;
+        return (await this.authenticateActive(headers)).sid;
       } catch {
         return null;
       }
     }
   }
 
-  private async ensureActive(actor: SessionActor): Promise<void> {
-    let status: string | undefined;
+  async revalidateActor(actor: SessionActor): Promise<SessionActor> {
     if (actor.kind === "administrator") {
-      status = (await this.dependencies.administrators.findByUuid(actor.uuid))?.getData().status;
-    } else if (actor.kind === "operator" && actor.tenantId) {
-      status = (await this.dependencies.operators.findByUuid(actor.uuid, actor.tenantId))?.getData()
-        .status;
-    } else if (actor.kind === "user" && actor.tenantId) {
-      status = (await this.dependencies.users.findByUuid(actor.uuid, actor.tenantId))?.getData()
-        .status;
-    }
-    if (status !== "active") {
+      const administrator = await this.dependencies.administrators.findByUuid(actor.uuid);
+      if (administrator?.getData().status === "active") {
+        return this.administratorActor(administrator);
+      }
       throw new HttpError(401, "UNAUTHENTICATED", "La identidad está inactiva.");
     }
+
+    if (!actor.tenantId) {
+      throw new HttpError(401, "UNAUTHENTICATED", "La identidad está inactiva.");
+    }
+    const tenant = await this.dependencies.tenants.findByUuid(actor.tenantId);
+    if (tenant?.getData().status !== "active") {
+      throw new HttpError(401, "UNAUTHENTICATED", "La identidad está inactiva.");
+    }
+    if (actor.kind === "operator") {
+      const operator = await this.dependencies.operators.findByUuid(actor.uuid, actor.tenantId);
+      if (operator?.getData().status === "active") return this.operatorActor(operator);
+    } else {
+      const user = await this.dependencies.users.findByUuid(actor.uuid, actor.tenantId);
+      if (user?.getData().status === "active") return this.userActor(user);
+    }
+    throw new HttpError(401, "UNAUTHENTICATED", "La identidad está inactiva.");
   }
 
   private async verifyIdentity<TIdentity extends AdministratorModel | OperatorModel | UserModel>(

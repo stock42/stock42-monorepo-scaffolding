@@ -124,16 +124,28 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
     };
   }, [activeRunId, cursor, tenantId]);
 
-  const pendingConfirmationIds = useMemo(() => {
-    const pendingIds = new Set<string>();
+  const pendingConfirmations = useMemo(() => {
+    const pendingItems = new Map<
+      string,
+      { id: string; toolName: string | null; preview: Record<string, unknown> | null }
+    >();
     for (const event of events) {
       const confirmationId =
         typeof event.payload.confirmationId === "string" ? event.payload.confirmationId : null;
       if (!confirmationId) continue;
-      if (event.type === "confirmation.required") pendingIds.add(confirmationId);
-      if (event.type === "confirmation.resolved") pendingIds.delete(confirmationId);
+      if (event.type === "confirmation.required") {
+        pendingItems.set(confirmationId, {
+          id: confirmationId,
+          toolName: typeof event.payload.toolName === "string" ? event.payload.toolName : null,
+          preview:
+            typeof event.payload.preview === "object" && event.payload.preview !== null
+              ? (event.payload.preview as Record<string, unknown>)
+              : null,
+        });
+      }
+      if (event.type === "confirmation.resolved") pendingItems.delete(confirmationId);
     }
-    return [...pendingIds];
+    return [...pendingItems.values()];
   }, [events]);
 
   function changeTenant(value: string) {
@@ -274,19 +286,40 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
               <p className="whitespace-pre-wrap text-sm leading-6">{answer}</p>
             </div>
           ) : null}
-          {pendingConfirmationIds.map((id) => (
-            <Alert key={id}>
-              <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-                <span>Operación crítica pendiente: {id}</span>
+          {pendingConfirmations.map((confirmation) => (
+            <Alert key={confirmation.id}>
+              <AlertDescription className="grid gap-3">
+                <div className="grid gap-1 text-sm">
+                  <span className="font-medium">
+                    Operación crítica pendiente
+                    {confirmation.toolName ? `: ${confirmation.toolName}` : ""}
+                  </span>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {confirmation.id}
+                  </span>
+                  {confirmation.preview ? (
+                    <dl className="mt-2 grid gap-1 rounded-md border border-border/70 bg-muted/30 p-3 text-xs">
+                      {Object.entries(confirmation.preview).map(([key, value]) => (
+                        <div key={key} className="grid grid-cols-[130px_1fr] gap-2">
+                          <dt className="font-medium text-muted-foreground">{key}</dt>
+                          <dd className="break-all">{String(value)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : null}
+                </div>
                 <span className="flex gap-2">
-                  <Button size="sm" onClick={() => void resolveConfirmation(id, "approve")}>
+                  <Button
+                    size="sm"
+                    onClick={() => void resolveConfirmation(confirmation.id, "approve")}
+                  >
                     <Check />
                     Aprobar
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => void resolveConfirmation(id, "reject")}
+                    onClick={() => void resolveConfirmation(confirmation.id, "reject")}
                   >
                     <X />
                     Rechazar

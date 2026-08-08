@@ -220,7 +220,10 @@ export class TelegramPollingRuntime {
     }
 
     if (command?.[1] === "status" && command[2]) {
-      const run = await this.store.getRun(command[2].trim(), access.tenantId);
+      const run = await this.store.getRunForActor(command[2].trim(), access.tenantId, {
+        actorId: access.actorId,
+        actorRole: access.actorRole,
+      });
       await this.telegram.send({
         tenantId: access.tenantId,
         runId: run?.uuid ?? `telegram-update-${update.update_id}`,
@@ -232,7 +235,10 @@ export class TelegramPollingRuntime {
     }
 
     if (command?.[1] === "cancel" && command[2]) {
-      const run = await this.store.requestCancellation(command[2].trim(), access.tenantId);
+      const run = await this.store.requestCancellation(command[2].trim(), access.tenantId, {
+        actorId: access.actorId,
+        actorRole: access.actorRole,
+      });
       await this.telegram.send({
         tenantId: access.tenantId,
         runId: run?.uuid ?? `telegram-update-${update.update_id}`,

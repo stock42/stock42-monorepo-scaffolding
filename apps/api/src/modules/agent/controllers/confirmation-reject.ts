@@ -19,6 +19,7 @@ export default controller({
       "rejected",
       tenantId,
       actor.uuid,
+      actor.role,
     );
     return response.json(result);
   },

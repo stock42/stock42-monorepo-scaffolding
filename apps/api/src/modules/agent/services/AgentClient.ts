@@ -3,6 +3,7 @@ import {
   AgentRunResponseSchema,
   type InternalRunEnvelope,
 } from "@stock42/contracts/agent";
+import type { ActorRole } from "@stock42/contracts/auth";
 import {
   UploadIntentResponseSchema,
   UploadSchema,
@@ -23,18 +24,20 @@ export class AgentClient {
       idempotencyKey: envelope.request.idempotencyKey,
       tenantId: envelope.tenantId,
       actorId: envelope.actorId,
+      actorRole: envelope.actorRole,
     });
   }
 
-  async getRun(runId: string, tenantId: string, actorId: string) {
+  async getRun(runId: string, tenantId: string, actorId: string, actorRole: ActorRole) {
     return this.request(`/internal/runs/${encodeURIComponent(runId)}`, AgentRunResponseSchema, {
       method: "GET",
       tenantId,
       actorId,
+      actorRole,
     });
   }
 
-  async cancelRun(runId: string, tenantId: string, actorId: string) {
+  async cancelRun(runId: string, tenantId: string, actorId: string, actorRole: ActorRole) {
     return this.request(
       `/internal/runs/${encodeURIComponent(runId)}/cancel`,
       AgentRunResponseSchema,
@@ -42,6 +45,7 @@ export class AgentClient {
         method: "POST",
         tenantId,
         actorId,
+        actorRole,
         idempotencyKey: `cancel:${runId}`,
       },
     );
@@ -52,6 +56,7 @@ export class AgentClient {
     decision: "approved" | "rejected",
     tenantId: string,
     actorId: string,
+    actorRole: ActorRole,
   ) {
     return this.request(
       `/internal/confirmations/${encodeURIComponent(confirmationId)}`,
@@ -61,30 +66,49 @@ export class AgentClient {
         body: { decision },
         tenantId,
         actorId,
+        actorRole,
         idempotencyKey: `confirmation:${confirmationId}:${decision}`,
       },
     );
   }
 
-  async events(runId: string, tenantId: string, actorId: string, cursor: number) {
+  async events(
+    runId: string,
+    tenantId: string,
+    actorId: string,
+    actorRole: ActorRole,
+    cursor: number,
+  ) {
     return this.request(
       `/internal/runs/${encodeURIComponent(runId)}/events?cursor=${cursor}`,
       AgentRunEventsResponseSchema,
-      { method: "GET", tenantId, actorId },
+      { method: "GET", tenantId, actorId, actorRole },
     );
   }
 
-  async createUploadIntent(input: UploadIntentInput, tenantId: string, actorId: string) {
+  async createUploadIntent(
+    input: UploadIntentInput,
+    tenantId: string,
+    actorId: string,
+    actorRole: ActorRole,
+  ) {
     return this.request("/internal/uploads/intents", UploadIntentResponseSchema, {
       method: "POST",
       body: input,
       tenantId,
       actorId,
+      actorRole,
       idempotencyKey: `upload-intent:${input.sha256}`,
     });
   }
 
-  async uploadContent(uploadId: string, bytes: Uint8Array, tenantId: string, actorId: string) {
+  async uploadContent(
+    uploadId: string,
+    bytes: Uint8Array,
+    tenantId: string,
+    actorId: string,
+    actorRole: ActorRole,
+  ) {
     const response = await this.signedFetch(
       `/internal/uploads/${encodeURIComponent(uploadId)}/content`,
       {
@@ -92,17 +116,24 @@ export class AgentClient {
         bytes,
         tenantId,
         actorId,
+        actorRole,
         contentType: "application/octet-stream",
       },
     );
     return this.parseJson(response, z.object({ ok: z.literal(true), data: UploadSchema }));
   }
 
-  async artifact(artifactId: string, tenantId: string, actorId: string): Promise<Response> {
+  async artifact(
+    artifactId: string,
+    tenantId: string,
+    actorId: string,
+    actorRole: ActorRole,
+  ): Promise<Response> {
     return this.signedFetch(`/internal/artifacts/${encodeURIComponent(artifactId)}`, {
       method: "GET",
       tenantId,
       actorId,
+      actorRole,
     });
   }
 
@@ -115,6 +146,7 @@ export class AgentClient {
       idempotencyKey?: string;
       tenantId: string;
       actorId: string;
+      actorRole: ActorRole;
     },
   ): Promise<z.infer<TSchema>> {
     const body = options.body === undefined ? undefined : JSON.stringify(options.body);
@@ -124,6 +156,7 @@ export class AgentClient {
       idempotencyKey: options.idempotencyKey,
       tenantId: options.tenantId,
       actorId: options.actorId,
+      actorRole: options.actorRole,
       contentType: "application/json",
     });
     return this.parseJson(response, schema);
@@ -137,13 +170,14 @@ export class AgentClient {
       idempotencyKey?: string;
       tenantId: string;
       actorId: string;
+      actorRole: ActorRole;
       contentType?: string;
     },
   ): Promise<Response> {
     const timestamp = Date.now().toString();
     const url = new URL(path, this.config.url);
     const signatureBuilder = createHmac("sha256", this.config.serviceToken).update(
-      `${timestamp}\n${options.method}\n${url.pathname}${url.search}\n`,
+      `${timestamp}\n${options.method}\n${url.pathname}${url.search}\n${options.tenantId}\n${options.actorId}\n${options.actorRole}\n`,
     );
     if (options.bytes) signatureBuilder.update(options.bytes);
     const signature = signatureBuilder.digest("base64url");
@@ -155,6 +189,7 @@ export class AgentClient {
       "x-service-signature": signature,
       "x-tenant-id": options.tenantId,
       "x-actor-id": options.actorId,
+      "x-actor-role": options.actorRole,
     });
     if (options.idempotencyKey) headers.set("x-idempotency-key", options.idempotencyKey);
 
@@ -180,6 +215,9 @@ export class AgentClient {
     }
     const payload: unknown = await response.json();
     if (!response.ok) {
+      if (response.status === 404) {
+        throw new HttpError(404, "NOT_FOUND", "Recurso agéntico no encontrado.");
+      }
       throw new HttpError(502, "UPSTREAM_ERROR", "El runtime de agentes rechazó la operación.");
     }
     return schema.parse(payload);

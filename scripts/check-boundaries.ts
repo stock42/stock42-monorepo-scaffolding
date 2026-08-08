@@ -23,33 +23,56 @@ async function filesBelow(directory: string): Promise<string[]> {
   return files.flat();
 }
 
-function owningApp(file: string): string | undefined {
+type WorkspaceOwner = { kind: "app" | "package"; name: string };
+
+function workspaceOwner(file: string): WorkspaceOwner | undefined {
   const normalized = relative(root, file).split(sep);
-  return normalized[0] === "apps" ? normalized[1] : undefined;
+  if (normalized[0] === "apps" && normalized[1]) {
+    return { kind: "app", name: normalized[1] };
+  }
+  if (normalized[0] === "packages" && normalized[1]) {
+    return { kind: "package", name: normalized[1] };
+  }
+  return undefined;
 }
 
 export function inspectSource(file: string, source: string): BoundaryViolation[] {
   const violations: BoundaryViolation[] = [];
-  const app = owningApp(file);
+  const owner = workspaceOwner(file);
 
   for (const match of source.matchAll(importPattern)) {
     const specifier = match[1];
     if (!specifier) continue;
 
-    if (specifier.includes("/apps/") || specifier.startsWith("apps/")) {
+    const absoluteApp = specifier.startsWith(".")
+      ? undefined
+      : specifier.match(/(?:^|\/)apps\/([^/]+)/)?.[1];
+    if (absoluteApp && owner) {
       violations.push({
         file,
-        message: `import absoluto hacia una app: ${specifier}`,
+        message:
+          owner.kind === "app"
+            ? `import cruzado apps/${owner.name} -> apps/${absoluteApp}`
+            : `package packages/${owner.name} importa apps/${absoluteApp}`,
       });
     }
 
-    if (app && specifier.startsWith(".")) {
+    if (owner && specifier.startsWith(".")) {
       const target = resolve(file, "..", specifier);
-      const targetApp = owningApp(target);
-      if (targetApp && targetApp !== app) {
+      const targetOwner = workspaceOwner(target);
+      if (targetOwner?.kind === "app" && owner.kind === "package") {
         violations.push({
           file,
-          message: `import cruzado apps/${app} -> apps/${targetApp}`,
+          message: `package packages/${owner.name} importa apps/${targetOwner.name}`,
+        });
+      } else if (
+        targetOwner?.kind === "app" &&
+        owner.kind === "app" &&
+        targetOwner.name !== owner.name
+      ) {
+        violations.push({
+          file,
+          message: `import cruzado apps/${owner.name} -> apps/${targetOwner.name}`,
         });
       }
     }

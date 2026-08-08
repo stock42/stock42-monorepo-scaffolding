@@ -7,10 +7,30 @@ const BooleanString = z
   .default("false")
   .transform((value) => value === "true");
 
+function looksLikePlaceholder(value: string): boolean {
+  return /(replace|change[-_ ]?me|placeholder|example|at[-_ ]?least)/i.test(value);
+}
+
+function isPrivateHost(host: string): boolean {
+  const value = host.toLowerCase().replace(/^\[|\]$/g, "");
+  if (value === "0.0.0.0" || value === "::" || value === "*") return false;
+  if (value === "localhost" || value === "::1") return true;
+  if (value.includes(":")) return value.startsWith("fc") || value.startsWith("fd");
+  if (!value.includes(".")) return true;
+  if (/^127\./.test(value) || /^10\./.test(value) || /^192\.168\./.test(value)) return true;
+  const secondOctet = Number(value.match(/^172\.(\d+)\./)?.[1]);
+  return (
+    (Number.isInteger(secondOctet) && secondOctet >= 16 && secondOctet <= 31) ||
+    value.startsWith("fc") ||
+    value.startsWith("fd")
+  );
+}
+
 const AgentConfigSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     AGENT_HOST: z.string().min(1).default("127.0.0.1"),
+    ALLOW_PUBLIC_AGENT_BIND: BooleanString,
     AGENT_PORT: z.coerce.number().int().min(1).max(65_535).default(4100),
     MONGODB_URI: z.string().min(1),
     MONGODB_DB: z.string().min(1),
@@ -45,6 +65,32 @@ const AgentConfigSchema = z
         path: ["TELEGRAM_POLL_BACKOFF_MAX_MS"],
         message: "El backoff máximo no puede ser menor al mínimo.",
       });
+    }
+    if (value.NODE_ENV === "production") {
+      if (!value.ALLOW_PUBLIC_AGENT_BIND && !isPrivateHost(value.AGENT_HOST)) {
+        context.addIssue({ code: "custom", path: ["AGENT_HOST"], message: "Must be private" });
+      }
+      for (const [key, secret] of [
+        ["AGENT_SERVICE_TOKEN", value.AGENT_SERVICE_TOKEN],
+        ["DEEPSEEK_API_KEY", value.DEEPSEEK_API_KEY],
+        ["TELEGRAM_BOT_TOKEN", value.TELEGRAM_BOT_TOKEN],
+      ] as const) {
+        if (secret && looksLikePlaceholder(secret)) {
+          context.addIssue({ code: "custom", path: [key], message: "Placeholder forbidden" });
+        }
+      }
+      const secrets = [
+        value.AGENT_SERVICE_TOKEN,
+        value.DEEPSEEK_API_KEY,
+        ...(value.TELEGRAM_BOT_TOKEN ? [value.TELEGRAM_BOT_TOKEN] : []),
+      ];
+      if (new Set(secrets).size !== secrets.length) {
+        context.addIssue({
+          code: "custom",
+          path: ["AGENT_SERVICE_TOKEN"],
+          message: "Secrets reused",
+        });
+      }
     }
   })
   .transform((value) => ({

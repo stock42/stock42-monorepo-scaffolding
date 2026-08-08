@@ -7,8 +7,9 @@ import { ArtifactService } from "../artifacts/ArtifactService";
 import { TelegramService } from "../telegram/TelegramService";
 import { UploadService } from "../uploads/UploadService";
 
-function csvCell(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
+export function csvCell(value: string): string {
+  const safeValue = /^\s*[=+\-@]/.test(value) ? `'${value}` : value;
+  return `"${safeValue.replaceAll('"', '""')}"`;
 }
 
 export class ToolRegistry {
@@ -80,6 +81,7 @@ export class ToolRegistry {
           input.headers.map(csvCell).join(","),
           ...input.rows.map((row) => row.map(csvCell).join(",")),
         ].join("\r\n");
+        await context.assertActive();
         const artifact = await this.artifacts.save({
           tenantId: context.run.tenantId,
           ownerId: context.run.actorId,
@@ -139,6 +141,7 @@ export class ToolRegistry {
           }
           y -= 8;
         }
+        await context.assertActive();
         const artifact = await this.artifacts.save({
           tenantId: context.run.tenantId,
           ownerId: context.run.actorId,
@@ -171,7 +174,10 @@ export class ToolRegistry {
       timeoutMs: 3_000,
       idempotent: true,
       execute: async (input, context) => {
-        const upload = await this.uploads.get(input.uploadId, context.run.tenantId);
+        const upload = await this.uploads.get(input.uploadId, context.run.tenantId, {
+          actorId: context.run.actorId,
+          actorRole: context.actorRole,
+        });
         if (!upload?.sha256) throw new Error("Upload no encontrado.");
         return {
           uploadId: upload.uuid,
@@ -217,7 +223,7 @@ export class ToolRegistry {
       name: "send_telegram_message",
       description: "Sends a Telegram message after explicit human confirmation.",
       inputSchema: z.object({
-        chatId: z.string().regex(/^-?\d+$/),
+        destinationId: z.string().uuid(),
         text: z.string().min(1).max(4_000),
       }),
       outputSchema: z.object({
@@ -227,13 +233,21 @@ export class ToolRegistry {
       actionClass: "critical",
       allowedRoles: ["platform_admin", "tenant_owner", "tenant_operator"],
       timeoutMs: 35_000,
-      idempotent: true,
+      idempotent: false,
+      confirmationPreview: async (input, context) =>
+        telegram.previewDestination({
+          tenantId: context.run.tenantId,
+          destinationId: input.destinationId,
+          text: input.text,
+        }),
       execute: async (input, context) =>
-        telegram.send({
+        telegram.sendToDestination({
           tenantId: context.run.tenantId,
           runId: context.run.uuid,
-          chatId: input.chatId,
+          destinationId: input.destinationId,
           text: input.text,
+          signal: context.signal,
+          assertActive: context.assertActive,
         }),
     });
   }

@@ -9,6 +9,14 @@ El formato sigue una versión simplificada de
 
 ### Added
 
+- Se adoptó Apache License 2.0 y se agregaron `SECURITY.md` y
+  `CONTRIBUTING.md` con soporte public preview, reporte privado, esquema
+  inbound=outbound, arquitectura, tenancy y gates de contribución.
+- Se agregó un gate de Gitleaks `8.30.1` sobre todo el historial Git, binario y
+  SHA-256 fijados en CI, con una única excepción por fingerprint para un
+  placeholder histórico verificado.
+- Se agregó `indexes:verify`, una inspección read-only de índices y planes
+  `explain()` del agente contra la base MongoDB configurada y autorizada.
 - Se reescribió `README.md` como presentación integral del scaffold agéntico:
   propuesta de valor, arquitectura, cobertura funcional, stack, flujo durable
   de runs, seguridad, quick start, guía de extensión, operación, límites reales
@@ -21,10 +29,10 @@ El formato sigue una versión simplificada de
   priorizado de correcciones, mejoras y nuevas funcionalidades para seguridad,
   autorización, WebSocket nativo de `s42-core`, runtime agéntico, producto,
   operación, testing, CI y escalabilidad opcional.
-- Se agregó el bootstrap idempotente del administrador de plataforma: la API
-  exige `DEFAULT_ADMIN_EMAIL` y `DEFAULT_ADMIN_PASSWORD`, crea la cuenta al
-  arrancar si el email no existe y permite ingresar con esas credenciales desde
-  el modo Plataforma del Backoffice.
+- Se agregó el bootstrap idempotente y explícito del administrador de
+  plataforma: con `DEFAULT_ADMIN_BOOTSTRAP_ENABLED=true` la API exige email y
+  password, crea la cuenta al arrancar si no existe y permite ingresar desde el
+  modo Plataforma del Backoffice.
 - Se agregaron `docs/API.md`, `docs/AI-AGENTS.md`, `docs/WEBAPP.md` y
   `docs/BACKOFFICE.md` con arquitectura, funcionalidad real, configuración,
   seguridad, rutas, operación, testing y guías de extensión por superficie; se
@@ -84,6 +92,15 @@ El formato sigue una versión simplificada de
 
 ### Changed
 
+- La configuración productiva de API/agente ahora falla cerrada ante CORS
+  wildcard o placeholder, cookies inseguras, tests activos, rate limit apagado,
+  secretos placeholder/reutilizados, URL pública del agente o bind público sin
+  override explícito; el bootstrap administrativo queda apagado por defecto.
+- La firma API → agente cubre tenant, actor y rol, y cada request autenticada o
+  ticket WebSocket revalida identidad, tenant y rol actuales en MongoDB.
+- Nginx reemplaza `X-Forwarded-For` con `$remote_addr`; la API sólo confía en
+  peers enumerados por `TRUSTED_PROXIES` y expone headers de cuota y
+  `Retry-After`.
 - Se actualizó la API de `s42-core@3.0.10` a `3.0.13` y se migró `/ws` al
   contrato nativo `WebSocketController`/`WebSocketControllers`, conservando el
   listener HTTP compartido, los tickets de un uso, el aislamiento tenant, los
@@ -103,6 +120,14 @@ El formato sigue una versión simplificada de
 
 ### Fixed
 
+- Se corrigió el gate de boundaries para modelar ownership del importador y
+  destino: tooling raíz puede validar apps, pero app→app y package→app siguen
+  prohibidos y cubiertos por tests.
+- Se actualizaron overrides transitivos y `bun.lock` hasta dejar `bun audit`
+  sin vulnerabilidades reportadas.
+- Runs, events, confirmations, uploads y artifacts aplican owner/manager dentro
+  del tenant; `tenant_user`/`tenant_operator` sólo operan recursos propios y las
+  denegaciones no revelan existencia.
 - La ausencia de `TELEGRAM_BOT_TOKEN` ahora mantiene el polling de Telegram
   deshabilitado aunque el script solicite habilitarlo; no se inicia el proceso
   `getUpdates`, health informa `disabled` y no se generan reintentos ni backoff.
@@ -114,6 +139,16 @@ El formato sigue una versión simplificada de
 
 ### Security
 
+- El runtime agéntico propaga `AbortSignal`, cerca heartbeats/transitions/effects
+  por `processId`, verifica ownership de PID, aplica grace real antes de
+  `SIGKILL` y persiste cada tool execution por
+  `runId + toolCallId + inputHash` para hacer efectiva la idempotencia.
+- Telegram crítico recibe un destination UUID server-owned, guarda destino y
+  preview en la confirmation y revalida el binding antes de enviar. Las
+  exportaciones CSV neutralizan fórmulas iniciadas por `=`, `+`, `-` o `@`.
+- Se agregaron índices únicos y operativos para runs, conversations, processes,
+  tool executions y deliveries, y se documentó una política de retención sin
+  TTL implícitos sobre evidencia operativa.
 - El bootstrap persiste únicamente el hash generado por `Bun.password`, no
   registra passwords ni hashes y nunca sobrescribe nombre, estado o credenciales
   de un administrador ya existente.

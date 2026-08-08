@@ -3,6 +3,8 @@ import { chmod, rename, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
+import { loadAgentConfig } from "../apps/agent/src/config";
+import { loadConfig } from "../apps/api/src/config";
 
 export const APP_NAMES = ["api", "agent", "webapp", "backoffice"] as const;
 export const SCENARIOS = ["development", "test", "production"] as const;
@@ -41,6 +43,9 @@ const scenarioControlledKeys = new Set([
   "API_TEST_ENABLED",
   "API_TEST_SEEDS",
   "TELEGRAM_POLLING_ENABLED",
+  "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
+  "ALLOW_PUBLIC_AGENT_URL",
+  "ALLOW_PUBLIC_AGENT_BIND",
 ]);
 const secretKeys = new Set([
   "MONGODB_URI",
@@ -61,13 +66,22 @@ const generatedSecretKeys = new Set([
   "WEBSOCKET_TICKET_SECRET",
 ]);
 const longSecretKeys = new Set(generatedSecretKeys);
-const optionalKeys = new Set(["TEST_TENANT_ID", "TELEGRAM_BOT_TOKEN"]);
+const optionalKeys = new Set([
+  "DEFAULT_ADMIN_EMAIL",
+  "DEFAULT_ADMIN_PASSWORD",
+  "TEST_TENANT_ID",
+  "TELEGRAM_BOT_TOKEN",
+  "TRUSTED_PROXIES",
+]);
 const booleanKeys = new Set([
   "COOKIE_SECURE",
   "RATE_LIMIT_ENABLED",
   "API_TEST_ENABLED",
   "API_TEST_SEEDS",
   "TELEGRAM_POLLING_ENABLED",
+  "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
+  "ALLOW_PUBLIC_AGENT_URL",
+  "ALLOW_PUBLIC_AGENT_BIND",
 ]);
 const integerKeys = new Set([
   "API_PORT",
@@ -124,6 +138,7 @@ export function buildScenarioDefaults(
       API_PORT: "3822",
       MONGODB_URI: "mongodb://127.0.0.1:27017",
       MONGODB_DB: "stock42_existing",
+      DEFAULT_ADMIN_BOOTSTRAP_ENABLED: "false",
       DEFAULT_ADMIN_EMAIL: "",
       DEFAULT_ADMIN_PASSWORD: "",
       AUTH_ACCESS_SECRET: createSecret(),
@@ -135,7 +150,9 @@ export function buildScenarioDefaults(
       ACCESS_TOKEN_TTL_SECONDS: "900",
       REFRESH_TOKEN_TTL_SECONDS: "604800",
       AGENT_INTERNAL_URL: "http://127.0.0.1:4100",
+      ALLOW_PUBLIC_AGENT_URL: "false",
       AGENT_SERVICE_TOKEN: agentServiceToken,
+      TRUSTED_PROXIES: "127.0.0.1,::1",
       RATE_LIMIT_ENABLED: "true",
       RATE_LIMIT_WINDOW_SECONDS: "60",
       RATE_LIMIT_REQUESTS: "120",
@@ -148,6 +165,7 @@ export function buildScenarioDefaults(
     agent: {
       NODE_ENV: scenario,
       AGENT_HOST: "127.0.0.1",
+      ALLOW_PUBLIC_AGENT_BIND: "false",
       AGENT_PORT: "4100",
       MONGODB_URI: "mongodb://127.0.0.1:27017",
       MONGODB_DB: "stock42_existing",
@@ -329,8 +347,21 @@ export function promptSections(values: AppEnvValues) {
   ] as const;
 }
 
+export function validateGeneratedConfiguration(values: AppEnvValues): void {
+  loadConfig(values.api);
+  loadAgentConfig(values.agent);
+}
+
 function validationError(key: string, value: string, values: AppEnvValues): string | undefined {
-  if (value === "") return optionalKeys.has(key) ? undefined : "No puede quedar vacío.";
+  if (value === "") {
+    if (
+      (key === "DEFAULT_ADMIN_EMAIL" || key === "DEFAULT_ADMIN_PASSWORD") &&
+      values.api.DEFAULT_ADMIN_BOOTSTRAP_ENABLED === "true"
+    ) {
+      return "Es obligatorio cuando DEFAULT_ADMIN_BOOTSTRAP_ENABLED=true.";
+    }
+    return optionalKeys.has(key) ? undefined : "No puede quedar vacío.";
+  }
   if (key === "DEFAULT_ADMIN_PASSWORD" && (value.length < 12 || value.length > 256)) {
     return "Debe tener entre 12 y 256 caracteres.";
   }
@@ -571,6 +602,7 @@ async function run(): Promise<void> {
     const scenario = await askScenario(prompt, detectExistingScenario(existing) ?? "development");
     const values = applyExistingValues(buildScenarioDefaults(scenario), existing, scenario);
     await collectValues(prompt, values, existing);
+    validateGeneratedConfiguration(values);
 
     console.info("\nSe crearán o actualizarán estos archivos:");
     for (const state of states) {

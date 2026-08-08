@@ -11,6 +11,7 @@
     "server": "bun run src/entrypoints/server.ts",
     "launcher": "bun run src/entrypoints/launcher.ts",
     "supervisor": "bun run src/entrypoints/supervisor.ts",
+    "indexes:verify": "bun run src/entrypoints/index-verify.ts",
     "check-types": "tsc --noEmit",
     "lint": "eslint src test",
     "test": "bun test"

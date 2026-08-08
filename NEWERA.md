@@ -93,6 +93,26 @@ Antes de ampliar producto existen ocho frentes prioritarios:
 
 ## 5. P0 — Corrección, seguridad y gates
 
+**Estado al 2026-08-08:** los ocho P0 de implementación quedaron resueltos en
+el árbol actual. El texto de cada ítem conserva el diagnóstico del baseline
+para explicar la decisión y evitar regresiones.
+
+| ID            | Cierre implementado                                                                                                  |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `NE-SEC-001`  | Matriz por owner/manager en HTTP interno, runs, events, confirmations, uploads, artifacts, WebSocket y Telegram.     |
+| `NE-SEC-002`  | `TRUSTED_PROXIES`, cadena IP validada, Nginx sin header heredado, headers de cuota y `Retry-After`.                  |
+| `NE-SEC-003`  | AbortSignal, fencing por `processId`, grace real, ownership de PID y ledger idempotente de tool executions.          |
+| `NE-SEC-004`  | Telegram por destination UUID activo, confirmation preview, revalidación pre-envío y neutralización de fórmulas CSV. |
+| `NE-DATA-001` | Índices únicos/operativos, invariantes concurrentes, verificador read-only con `listIndexes`/`explain` y retención.  |
+| `NE-CI-001`   | Boundaries modela owner de importer/target y cubre app, package y tooling raíz con tests.                            |
+| `NE-DEP-001`  | Overrides mínimos y lockfile actualizado; `bun audit` queda sin advisories.                                          |
+| `NE-CFG-001`  | Loaders productivos fail-closed, bootstrap opt-in y revalidación activa de identidad/tenant/rol.                     |
+
+La comprobación de índices sobre una base desplegada sigue siendo una operación
+de infraestructura: se ejecuta con `bun run --cwd apps/agent indexes:verify`
+contra la base existente expresamente autorizada. No se ejecuta automáticamente
+contra una base desconocida durante una auditoría del repositorio.
+
 ### NE-SEC-001 — Autorización por recurso y actor
 
 **Tipo:** corrección de seguridad
@@ -873,24 +893,28 @@ inventar nombres/credenciales.
 
 ## 9. Mapa por superficie
 
-| Superficie        | Situación actual                                  | Próximo resultado recomendado                                   |
-| ----------------- | ------------------------------------------------- | --------------------------------------------------------------- |
-| `apps/api`        | HTTP modular, auth, tenancy, archivos y WS nativo | Autorización por recurso, trusted proxy, métricas y health real |
-| `apps/agent`      | Runtime durable, DeepSeek, tools y Telegram       | Fencing/abort, cola justa, contexto acotado y telemetría        |
-| `apps/webapp`     | Login, shell y creación de run                    | Workspace realtime, conversaciones, uploads y artifacts         |
-| `apps/backoffice` | Tenants, personas, agente y Telegram AI básicos   | Operación real, audit, approvals e identity lifecycle           |
-| `contracts`       | Contratos base Zod                                | Recursos listables, policies, errores y realtime completos      |
-| `api-client`      | Request JSON y forwarding de respuesta            | Cliente WS, streaming, timeout y error decoder                  |
-| `ui`              | Catálogo shadcn compartido                        | Shell responsive y pruebas accesibles de piezas críticas        |
-| Config packages   | Strict TS y lint compartido                       | Mantener simples; agregar reglas solo por fallos reales         |
-| Scripts/Turbo     | Launchers explícitos y env CLI                    | Boundary gate correcto, affected/coverage y diagnóstico         |
-| CI                | Pipeline completo y fail-closed                   | Volverlo verde, resolver audit y ampliar escenarios críticos    |
-| Nginx             | Tres vhosts autónomos                             | Separar `/ws`, alinear límites y trusted proxy                  |
-| Docs              | Guías por superficie y plan v0                    | Matriz de policy, runbooks y referencias verificables           |
+| Superficie        | Situación actual                                      | Próximo resultado recomendado                              |
+| ----------------- | ----------------------------------------------------- | ---------------------------------------------------------- |
+| `apps/api`        | HTTP/WS, auth activa, resource policy y trusted proxy | Métricas y health real                                     |
+| `apps/agent`      | Runtime cercado, effects durables, tools y Telegram   | Cola justa, contexto acotado y telemetría                  |
+| `apps/webapp`     | Login, shell y creación de run                        | Workspace realtime, conversaciones, uploads y artifacts    |
+| `apps/backoffice` | Tenants, personas, agente y Telegram AI básicos       | Operación real, audit, approvals e identity lifecycle      |
+| `contracts`       | Contratos base Zod                                    | Recursos listables, policies, errores y realtime completos |
+| `api-client`      | Request JSON y forwarding de respuesta                | Cliente WS, streaming, timeout y error decoder             |
+| `ui`              | Catálogo shadcn compartido                            | Shell responsive y pruebas accesibles de piezas críticas   |
+| Config packages   | Strict TS y lint compartido                           | Mantener simples; agregar reglas solo por fallos reales    |
+| Scripts/Turbo     | Launchers, env CLI y boundaries por ownership         | Affected/coverage y diagnóstico                            |
+| CI                | Pipeline, audit y secret scan fail-closed             | Ampliar escenarios críticos                                |
+| Nginx             | Tres vhosts autónomos con forwarding confiable        | Separar `/ws` y alinear límites                            |
+| Docs              | Guías, policy y runbooks por superficie               | Referencias verificables y operación de features P1        |
 
 ## 10. Secuencia recomendada
 
 ### Etapa A — Base confiable
+
+**Completada en el árbol actual.** El gate local cubre los P0; antes de declarar
+una base desplegada se debe ejecutar `indexes:verify`, integración y E2E contra
+infraestructura expresamente autorizada.
 
 1. NE-SEC-001, NE-SEC-002, NE-SEC-003 y NE-SEC-004.
 2. NE-DATA-001 y NE-CFG-001.

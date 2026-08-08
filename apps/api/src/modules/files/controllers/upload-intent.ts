@@ -17,6 +17,7 @@ export default controller({
       UploadIntentInputSchema.parse(request.body),
       actor.tenantId,
       actor.uuid,
+      actor.role,
     );
     return response.status(201).json(result);
   },

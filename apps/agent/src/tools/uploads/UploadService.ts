@@ -4,6 +4,7 @@ import { resolve, sep } from "node:path";
 import type { UploadIntentInput } from "@stock42/contracts/files";
 import type { AgentConfig } from "@/config";
 import type { AgentStore, UploadDocument } from "@/runtime/store/AgentStore";
+import { ownerFilter, type ResourceActor } from "@/runtime/authorization";
 
 const extensions: Record<UploadIntentInput["mimeType"], string> = {
   "application/pdf": ".pdf",
@@ -114,8 +115,13 @@ export class UploadService {
     return updated;
   }
 
-  async get(uuid: string, tenantId: string): Promise<UploadDocument | null> {
-    return this.store.uploadsCollection.findOne({ uuid, tenantId, status: "ready" });
+  async get(uuid: string, tenantId: string, actor: ResourceActor): Promise<UploadDocument | null> {
+    return this.store.uploadsCollection.findOne({
+      uuid,
+      tenantId,
+      status: "ready",
+      ...ownerFilter("ownerId", actor),
+    });
   }
 
   private async reject(uuid: string): Promise<void> {

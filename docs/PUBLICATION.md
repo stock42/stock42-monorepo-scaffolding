@@ -18,25 +18,26 @@ Este documento separa tres acciones distintas:
 
 ## 2. Veredicto al 8 de agosto de 2026
 
-**No cambiar todavía la visibilidad.** La base técnica tiene suficiente alcance
-para presentarse como scaffold real, pero la publicación responsable requiere
-cerrar decisiones legales, gates de calidad y una revisión final de exposición.
+**Los P0 de preparación técnica están cerrados; no cambiar todavía la
+visibilidad.** Falta completar la revisión de superficies alojadas en GitHub,
+aprobar marca/historial y configurar el repositorio como producto público. Esas
+acciones no se pueden inferir de un push de código.
 
-### Bloqueos de publicación
+### Estado de gates
 
-| Prioridad | Bloqueo                                           | Criterio de salida                                                                                              |
-| --------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| P0        | No existe `LICENSE`                               | Elegir licencia con el propietario y asesoramiento adecuado; agregar el texto exacto y reflejarlo en GitHub     |
-| P0        | `bun run boundaries` no está verde                | Corregir el falso/real cruce desde `scripts/update-env.test.ts` sin debilitar las reglas de arquitectura        |
-| P0        | `bun audit` informa advisories                    | Actualizar o clasificar cada advisory y documentar cualquier riesgo aceptado                                    |
-| P0        | Falta un secret scan especializado                | Ejecutar Gitleaks o equivalente sobre todo el historial y revisar Actions, artifacts y logs antes de exponerlos |
-| P0        | El backlog mantiene riesgos de seguridad abiertos | Definir qué P0 de `NEWERA.md` deben cerrarse para declarar el template seguro para producción                   |
-| P1        | Faltan archivos comunitarios                      | Agregar `SECURITY.md`, `CONTRIBUTING.md`, código de conducta y soporte con contactos reales                     |
-| P1        | Falta decidir la exposición histórica             | Aprobar o sanear referencias internas, paths de desarrollo y email del autor presentes en el historial          |
-| P1        | Falta configurar GitHub como producto público     | Descripción, topics, social preview, template repository, rulesets y controles de seguridad                     |
+| Prioridad | Estado    | Gate                                                                                                                      |
+| --------- | --------- | ------------------------------------------------------------------------------------------------------------------------- |
+| P0        | Cumplido  | `LICENSE` contiene el texto oficial exacto de Apache License 2.0.                                                         |
+| P0        | Cumplido  | `bun run boundaries` modela ownership sin excepciones por archivo y pasa sus tests.                                       |
+| P0        | Cumplido  | Overrides/lockfile mínimos dejan `bun audit` sin advisories.                                                              |
+| P0        | Cumplido  | Gitleaks 8.30.1 recorrió `--all`; el único match era un placeholder histórico identificado por fingerprint y documentado. |
+| P0        | Cumplido  | Los ocho P0 de `NEWERA.md` están implementados y tienen validación local proporcional.                                    |
+| P1        | Parcial   | Existen `SECURITY.md` y `CONTRIBUTING.md`; código de conducta, soporte y owners requieren responsables reales.            |
+| P1        | Pendiente | Aprobar exposición de referencias históricas e identidad Git del autor.                                                   |
+| P1        | Pendiente | Revisar GitHub Actions/artifacts y configurar metadata, template, rulesets y security features.                           |
 
-Los P0 impiden recomendar la apertura. Los P1 pueden prepararse en paralelo,
-pero deben quedar resueltos antes del anuncio público.
+El código ya no tiene un bloqueo P0 conocido. Los P1 operativos siguen
+impidiendo recomendar el cambio de visibilidad o un anuncio público.
 
 ## 3. Evidencia de la auditoría inicial
 
@@ -50,13 +51,38 @@ credenciales.
 | Alcance Git                    | 326 archivos tracked, 15 commits, sin tags en el baseline auditado                                                              |
 | Archivos de entorno históricos | Solo se detectaron los cuatro `.env.example`; no apareció un `.env` real en el historial                                        |
 | Heurística de secretos         | Sin coincidencias de claves privadas, tokens GitHub/AWS/Telegram ni URLs MongoDB con credenciales en el historial inspeccionado |
-| Herramientas especializadas    | `gitleaks` y `trufflehog` no estaban instalados; la heurística anterior no reemplaza un secret scan formal                      |
+| Herramientas especializadas    | Gitleaks `8.30.1` recorrió los 17 commits alcanzables con `--all` y `--redact=100`; resultado final sin leaks abiertos          |
 | Identidad Git                  | Los commits exponen `cesar@stock42.com`; el propietario debe confirmar que ese email puede hacerse público                      |
 | Referencias internas           | `initial.md` y el plan histórico contienen paths locales y nombres de repositorios usados como referencia                       |
-| Licencia                       | No existe `LICENSE`                                                                                                             |
-| Comunidad                      | No existen `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` ni `SUPPORT.md`                                               |
+| Licencia                       | Apache License 2.0, texto oficial exacto en `LICENSE`                                                                           |
+| Comunidad                      | `SECURITY.md` y `CONTRIBUTING.md` presentes; faltan responsables reales para Code of Conduct, support y CODEOWNERS              |
 | Automatización GitHub          | Existe `.github/workflows/ci.yml`, pero no templates de issues/PR, CODEOWNERS ni Dependabot                                     |
-| Gates conocidos                | `boundaries` y `audit` requieren resolución; la integración MongoDB y E2E no se ejecutaron durante esta auditoría               |
+| Gates conocidos                | `boundaries`, unit tests, tipos y audit verificados localmente; MongoDB/E2E requieren infraestructura autorizada                |
+
+El match inicial de Gitleaks fue `generic-api-key` en el placeholder histórico
+de `AUTH_ACCESS_SECRET` dentro de `apps/api/.env.example`, commit
+`9125dab8f3495cef275264e6de9d3b2e892f1e98`. No se conserva ni publica el valor.
+La excepción usa únicamente el fingerprint exacto en `.gitleaksignore`; una
+segunda ejecución completa terminó sin hallazgos. CI descarga el binario
+oficial con versión y SHA-256 fijados en lugar de depender de un Action que
+requiera licencia adicional para repositorios de organización.
+
+### Evidencia de cierre P0
+
+Sobre el árbol de cierre se verificó:
+
+- `bun install --frozen-lockfile`: sin cambios;
+- `bun run format:check`, `bun run check-types` y `bun run lint`: verdes;
+- `bun run test`: 45 tests unitarios verdes en los workspaces;
+- `bun run test:tools`: 9 tests del generador de entorno;
+- `bun run boundaries`: 5 tests y scanner verde;
+- `bun audit`: sin vulnerabilidades reportadas;
+- `bun run build`: builds Next.js de webapp y backoffice verdes;
+- Gitleaks: 17 commits y material público nuevo/modificado sin leaks abiertos.
+
+No se ejecutaron `test:api`, `test:e2e` ni `indexes:verify`: requieren una base
+MongoDB existente y expresamente autorizada, que no se proporcionó para esta
+tarea. No se creó una base, emulador ni proceso persistente para sustituirla.
 
 ### Alcance del secret scan final
 
@@ -76,23 +102,18 @@ nuevo no retira el valor de commits anteriores.
 
 ## 4. Decisiones que debe tomar el propietario
 
-### 4.1 Licencia
+### 4.1 Licencia decidida
 
 El objetivo declarado —que cualquier desarrollador pueda clonar y crear un
 proyecto— necesita permisos expresos. Hacer público el repositorio sin licencia
 permite leerlo y forkarlo dentro de GitHub, pero no concede por sí solo una
 licencia general para usar, modificar y redistribuir el código.
 
-Opciones razonables para evaluar:
-
-| Opción     | Ventaja                                                                          | Decisión asociada                                                          |
-| ---------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Apache-2.0 | Permisiva, incluye concesión expresa de patentes y condiciones claras de notices | Recomendable si se busca adopción comercial con mayor claridad de patentes |
-| MIT        | Muy breve, ampliamente conocida y permisiva                                      | Recomendable si se prioriza máxima simplicidad documental                  |
-
-La elección debe cubrir también copyright, año, titulares, contribuciones y si
-el nombre/logo Stock42 tiene una política de marca separada. Este análisis no
-sustituye asesoramiento legal.
+El propietario eligió **Apache License 2.0**. `LICENSE` contiene el texto
+oficial sin modificaciones. Las contribuciones aceptadas siguen
+inbound=outbound conforme a la sección 5; no se exige CLA ni DCO adicional.
+Nombre, logo y política de marca continúan siendo una decisión separada de la
+licencia de copyright/patentes. Este documento no sustituye asesoramiento legal.
 
 ### 4.2 Identidad y marca
 
@@ -107,10 +128,13 @@ Definir antes de abrir:
 
 ### 4.3 Modelo de contribución
 
-Decidir:
+Decidido:
 
-- si se aceptarán pull requests externos;
-- licencia de las contribuciones: inbound=outbound, DCO o CLA;
+- se aceptan pull requests externos siguiendo `CONTRIBUTING.md`;
+- las contribuciones usan Apache-2.0 inbound=outbound, sin DCO ni CLA;
+
+Todavía se debe decidir:
+
 - mantenedores y CODEOWNERS por apps/packages;
 - SLA y canal para issues, preguntas y reportes de seguridad;
 - código de conducta y contacto real de enforcement;
@@ -125,22 +149,20 @@ El README presenta el alcance real y diferencia lo implementado de lo
 pendiente. Hay que elegir una etiqueta pública coherente:
 
 - **experimental:** útil para explorar y contribuir, sin promesa productiva;
-- **public preview:** arquitectura estable con P0 activos y cambios posibles;
+- **public preview:** arquitectura estable, gates P0 cerrados y cambios posibles;
 - **production-ready:** solo después de cerrar los gates y riesgos P0 acordados.
 
-Con el estado auditado corresponde **public preview**, no
-`production-ready`.
+El nivel elegido es **public preview**, no `production-ready`.
 
 ## 5. Archivos públicos necesarios
 
 GitHub usa el community profile para comprobar documentación básica de un
-proyecto público. Crear estos archivos después de definir responsables y
-políticas:
+proyecto público. Estado actual:
 
 ```text
-LICENSE
-SECURITY.md
-CONTRIBUTING.md
+LICENSE                    # creado
+SECURITY.md                # creado
+CONTRIBUTING.md            # creado
 CODE_OF_CONDUCT.md
 SUPPORT.md
 .github/
@@ -186,6 +208,7 @@ bun run lint
 bun run test
 bun run boundaries
 bun run audit
+bun run secret-scan
 bun run build
 ```
 
@@ -308,9 +331,10 @@ hacerla si el secret scan encuentra material que no puede hacerse público.
 
 ### Antes
 
-- [ ] Propietario aprueba licencia, marca y exposición del historial.
-- [ ] Todos los P0 de esta guía tienen criterio de salida cumplido.
-- [ ] Secret scan formal sin hallazgos abiertos.
+- [x] Propietario aprueba Apache License 2.0.
+- [ ] Propietario aprueba marca y exposición del historial.
+- [x] Todos los P0 de código de esta guía tienen criterio de salida cumplido.
+- [x] Secret scan formal del historial Git sin hallazgos abiertos.
 - [ ] Revisados Actions logs, artifacts, releases, packages, issues y PRs.
 - [ ] README y community files validados desde un clon limpio.
 - [ ] Ruleset, CODEOWNERS, permisos de Actions y security features preparados.

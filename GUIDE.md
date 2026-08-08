@@ -91,6 +91,7 @@ bun run test
 bun run boundaries
 bun run format:check
 bun audit
+bun run secret-scan   # requiere Gitleaks; recorre todo el historial Git
 ```
 
 Los launchers usan listas explícitas. Si se agrega o renombra una app hay que
@@ -209,7 +210,7 @@ El orden del boot es:
 3. construir el contexto;
 4. ejecutar migraciones;
 5. crear índices por módulo;
-6. asegurar el administrador de plataforma configurado;
+6. asegurar el administrador de plataforma sólo si el bootstrap está habilitado;
 7. ejecutar seeds solo bajo opt-in explícito;
 8. cargar módulos s42-core;
 9. iniciar HTTP y WebSocket;
@@ -218,15 +219,18 @@ El orden del boot es:
 `apps/api/.env` debe definir:
 
 ```env
+DEFAULT_ADMIN_BOOTSTRAP_ENABLED=true
 DEFAULT_ADMIN_EMAIL=admin@example.com
 DEFAULT_ADMIN_PASSWORD=...
 ```
 
-`bun run update:env` solicita ambos valores sin mostrar la contraseña. Al
-arrancar, la API busca el email después de asegurar sus índices. Si no existe,
-crea un administrador activo y persiste únicamente el hash producido por
-`Bun.password`; si existe, conserva íntegramente su nombre, estado y password.
-Por lo tanto, cambiar la variable de password no funciona como reset.
+El default es `DEFAULT_ADMIN_BOOTSTRAP_ENABLED=false`; email y password pueden
+quedar vacíos. Al habilitarlo, `bun run update:env` exige ambos valores sin
+mostrar la contraseña. La API busca el email después de asegurar sus índices,
+crea un administrador activo si no existe y persiste únicamente el hash de
+`Bun.password`. Si existe, conserva nombre, estado y password; cambiar la
+variable no funciona como reset. En un proyecto nuevo se habilita para el
+primer boot y se vuelve a `false` después de verificar el acceso.
 
 Estas credenciales se usan en `/login` del Backoffice con el modo
 `Plataforma`. Para altas adicionales se mantiene
@@ -264,6 +268,11 @@ Se mitiga con expiración corta de access, rotación de emisión, cookies
 protegidas y CSRF. Agregar sesiones revocables es un cambio de arquitectura,
 no un helper incidental.
 
+Cada request autenticada vuelve a consultar identidad y tenant activos, y
+reconstruye el rol actual antes de autorizar. La misma revalidación se aplica al
+consumir un ticket WebSocket; desactivar una identidad o cambiar su rol no queda
+diferido hasta el vencimiento del access token.
+
 ### CSRF
 
 Se usa `Bun.CSRF` con secreto explícito. Bun `1.3.14` no respeta actualmente el
@@ -281,12 +290,16 @@ El flujo browser es:
 ### CORS y rate limit
 
 `CORS_ORIGINS=*` refleja el Origin válido y agrega `Vary: Origin`; nunca combina
-el literal `*` con credenciales. Producción debería declarar una allowlist.
+el literal `*` con credenciales. Producción exige una allowlist real,
+`COOKIE_SECURE=true`, rate limit activo, flags de test apagados, secretos
+independientes y no-placeholder, y URL privada del agente.
 `Origin: null` y origins malformados se rechazan.
 
-El rate limit local se particiona por IP antes de autenticar y por
-actor/tenant para agentes. Es suficiente para una instancia. Antes de escalar
-horizontalmente hay que elegir un backend distribuido.
+`TRUSTED_PROXIES` enumera IPs exactas. La API ignora `X-Forwarded-For` de peers
+no confiables y recorre la cadena validada desde el edge confiable. Nginx
+reemplaza ese header con `$remote_addr`. El rate limit local se particiona por
+esa IP antes de autenticar y por actor/tenant para agentes, devuelve
+`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` y `Retry-After` en 429. Antes de escalar horizontalmente hay que elegir un backend distribuido.
 
 ## 11. Next.js y shadcn
 
@@ -350,8 +363,8 @@ PID/proceso.
 ### Estado durable
 
 MongoDB contiene conversaciones, mensajes, runs, eventos, confirmations,
-procesos, uploads, artifacts, entregas, sesiones Telegram, offset/health de
-polling y accesos `Telegram AI`. Los estados son:
+procesos, ejecuciones de tools, uploads, artifacts, entregas, sesiones Telegram,
+offset/health de polling y accesos `Telegram AI`. Los estados son:
 
 ```text
 queued → starting → running → succeeded
@@ -362,6 +375,13 @@ queued → starting → running → succeeded
 
 Los eventos tienen secuencia monotónica por run. HTTP permite replay por cursor
 y WebSocket solo acelera la entrega; no es fuente de verdad.
+
+Cada worker queda cercado por `processId`. Heartbeats, transitions y commits de
+tools verifican el intento activo. `SIGTERM` aborta providers y tools; timeout y
+cancelación esperan `AGENT_CANCEL_GRACE_MS`, verifican que el PID siga ligado al
+process document y sólo entonces escalan a `SIGKILL`. La ejecución de cada tool
+se persiste por `runId + toolCallId + inputHash`: las idempotentes pueden
+reanudarse y las no idempotentes con outcome incierto exigen reconciliación.
 
 ### DeepSeek
 
@@ -379,13 +399,18 @@ El registry incluye:
 - CSV acotado;
 - inspección de uploads;
 - listado de artifacts;
-- Telegram idempotente.
+- Telegram con ledger durable y reconciliación manual de outcomes inciertos.
 
 No existen tools `find`, `aggregate`, `update` o `delete` genéricas para
 MongoDB. Las tools read corren con autorización; las write auditan eventos; las
 critical crean una confirmation durable. Aprobar no cambia argumentos: el
-input está hasheado y almacenado con el tool call. Rechazo o expiración vuelve
-al loop como resultado explícito.
+input está hasheado y almacenado con el tool call. La confirmation incluye un
+preview server-owned. Los CSV neutralizan celdas que comienzan con `=`, `+`,
+`-` o `@`; Telegram recibe un `destinationId` activo del tenant, nunca un chat
+arbitrario elegido por el modelo, y revalida el binding antes de enviar. Como
+`sendMessage` no acepta idempotency key, un outcome ambiguo no se reenvía a
+ciegas y queda para reconciliación manual. Rechazo o expiración vuelve al loop
+como resultado explícito.
 
 ### Telegram: entrega y polling
 
@@ -504,10 +529,14 @@ recargarla. Estos ejemplos no asumen control sobre los demás proyectos.
 Todo cambio de dominio, puerto, path, WebSocket, upload, timeout, health o
 header de proxy exige actualizar Nginx.
 
+Los tres hosts fijan `X-Forwarded-For $remote_addr`; la API sólo lo acepta si la
+IP peer aparece en `TRUSTED_PROXIES`.
+
 ## 17. CI
 
-GitHub Actions ejecuta install frozen, formato, boundaries, tipos, lint, audit,
-unit tests y `build-all.sh`. El job de integración:
+GitHub Actions descarga Gitleaks `8.30.1` con SHA-256 fijado, escanea el
+historial completo y luego ejecuta install frozen, formato, boundaries, tipos,
+lint, audit, unit tests y `build-all.sh`. El job de integración:
 
 - nunca levanta MongoDB;
 - exige secretos hacia una base existente autorizada;

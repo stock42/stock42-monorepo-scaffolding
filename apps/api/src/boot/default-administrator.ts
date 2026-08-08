@@ -5,7 +5,7 @@ import type { AdministratorStorage } from "@/modules/administrators/services/Adm
 type DefaultAdministratorStorage = Pick<AdministratorStorage, "create" | "findByEmail">;
 
 export async function ensureDefaultAdministrator(
-  config: ApiConfig["defaultAdministrator"],
+  config: NonNullable<ApiConfig["defaultAdministrator"]>,
   storage: DefaultAdministratorStorage,
 ): Promise<"created" | "existing"> {
   const existing = await storage.findByEmail(config.email);

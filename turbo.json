@@ -13,6 +13,7 @@
         "API_PORT",
         "WEBAPP_PORT",
         "BACKOFFICE_PORT",
+        "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
         "DEFAULT_ADMIN_EMAIL",
         "DEFAULT_ADMIN_PASSWORD"
       ]
@@ -28,6 +29,7 @@
         "API_PORT",
         "WEBAPP_PORT",
         "BACKOFFICE_PORT",
+        "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
         "DEFAULT_ADMIN_EMAIL",
         "DEFAULT_ADMIN_PASSWORD"
       ]
@@ -52,6 +54,7 @@
         "MONGODB_URI",
         "MONGODB_DB",
         "TEST_TENANT_ID",
+        "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
         "DEFAULT_ADMIN_EMAIL",
         "DEFAULT_ADMIN_PASSWORD"
       ]

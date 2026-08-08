@@ -4,10 +4,11 @@ import type {
   AgentRunStatus,
   ToolActionClass,
 } from "@stock42/contracts/agent";
+import type { ActorRole } from "@stock42/contracts/auth";
 import type { z } from "zod";
 
 export type RunDocument = AgentRun & {
-  actorRole: string;
+  actorRole: ActorRole;
   eventSequence: number;
   claimedBy: string | null;
   processId: string | null;
@@ -50,6 +51,7 @@ export type ConfirmationDocument = {
   toolName: string;
   input: unknown;
   inputHash: string;
+  preview: Record<string, unknown> | null;
   toolCallId: string;
   status: "pending" | "approved" | "rejected" | "expired";
   expiresAt: string;
@@ -57,6 +59,23 @@ export type ConfirmationDocument = {
   resolvedBy: string | null;
   executedAt: string | null;
   createdAt: string;
+};
+
+export type ToolExecutionDocument = {
+  uuid: string;
+  runId: string;
+  tenantId: string;
+  toolCallId: string;
+  toolName: string;
+  inputHash: string;
+  processId: string;
+  status: "running" | "succeeded" | "failed";
+  output: unknown;
+  error: string | null;
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
 };
 
 export type ProcessDocument = {
@@ -89,7 +108,10 @@ export type AgentManifest<TInput extends z.ZodType = z.ZodType> = {
 
 export type ToolContext = {
   run: RunDocument;
-  actorRole: string;
+  actorRole: ActorRole;
+  processId: string;
+  signal: AbortSignal;
+  assertActive: () => Promise<void>;
 };
 
 export type ToolDefinition<TInput extends z.ZodType = z.ZodType> = {
@@ -98,10 +120,14 @@ export type ToolDefinition<TInput extends z.ZodType = z.ZodType> = {
   inputSchema: TInput;
   outputSchema: z.ZodType;
   actionClass: ToolActionClass;
-  allowedRoles: string[];
+  allowedRoles: ActorRole[];
   timeoutMs: number;
   idempotent: boolean;
   execute: (input: z.infer<TInput>, context: ToolContext) => Promise<unknown>;
+  confirmationPreview?: (
+    input: z.infer<TInput>,
+    context: ToolContext,
+  ) => Promise<Record<string, unknown>>;
 };
 
 export const terminalStatuses = new Set<AgentRunStatus>([

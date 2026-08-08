@@ -8,6 +8,7 @@ import { WebSocketController, WebSocketControllers, type WebSocketMessage } from
 import type { ApiConfig } from "@/config";
 import { resolveCorsOrigin } from "@/http/cors";
 import type { AgentClient } from "@/modules/agent/services/AgentClient";
+import type { AuthService } from "@/modules/auth/services/AuthService";
 import { AgentEventBridge } from "./AgentEventBridge";
 import type { WebSocketTicketService } from "./WebSocketTicketService";
 
@@ -30,6 +31,7 @@ export class WebSocketGateway {
   constructor(
     private readonly tickets: WebSocketTicketService,
     private readonly agentClient: AgentClient,
+    private readonly auth: AuthService,
     private readonly config: ApiConfig,
   ) {
     this.bridge = new AgentEventBridge(agentClient, (event) => this.publish(event));
@@ -89,7 +91,7 @@ export class WebSocketGateway {
     const ticket = new URL(request.url).searchParams.get("ticket");
     if (!ticket) return new Response("Ticket required", { status: 401 });
     try {
-      const actor = await this.tickets.consume(ticket);
+      const actor = await this.auth.revalidateActor(await this.tickets.consume(ticket));
       return {
         data: {
           connectionId: crypto.randomUUID(),
@@ -161,6 +163,7 @@ export class WebSocketGateway {
         runId,
         socket.data.actor.tenantId ?? "",
         socket.data.actor.uuid,
+        socket.data.actor.role,
       );
     } catch {
       this.send(socket, {
@@ -173,7 +176,13 @@ export class WebSocketGateway {
     }
     if (!socket.data.channels.has(message.data.channel)) {
       socket.data.channels.add(message.data.channel);
-      this.bridge.track(runId, socket.data.actor.tenantId ?? "", message.data.cursor ?? 0);
+      this.bridge.track(
+        runId,
+        socket.data.actor.tenantId ?? "",
+        socket.data.actor.uuid,
+        socket.data.actor.role,
+        message.data.cursor ?? 0,
+      );
     }
     this.send(socket, {
       type: "ack",

@@ -10,6 +10,7 @@ import {
   parseEnvValues,
   promptSections,
   renderEnv,
+  validateGeneratedConfiguration,
   type AppEnvValues,
 } from "./update-env";
 
@@ -39,9 +40,16 @@ describe("update:env", () => {
 
   test("genera valores aceptados por los contratos de API y agente", () => {
     for (const scenario of ["development", "test", "production"] as const) {
-      const values = buildScenarioDefaults(scenario, () => "x".repeat(32));
+      let secretIndex = 0;
+      const values = buildScenarioDefaults(
+        scenario,
+        () => `${String(++secretIndex).padStart(2, "0")}${"x".repeat(32)}`,
+      );
+      values.api.DEFAULT_ADMIN_BOOTSTRAP_ENABLED = "true";
       values.api.DEFAULT_ADMIN_EMAIL = "ADMIN@EXAMPLE.COM";
       values.api.DEFAULT_ADMIN_PASSWORD = "a-secure-password";
+      if (scenario === "production") values.api.CORS_ORIGINS = "https://app.acme.test";
+      values.agent.DEEPSEEK_API_KEY = "provider-live-key-for-production-tests";
       expect(loadConfig(values.api).defaultAdministrator.email).toBe("admin@example.com");
       expect(() => loadAgentConfig(values.agent)).not.toThrow();
     }
@@ -52,7 +60,27 @@ describe("update:env", () => {
 
     expect(values.api.DEFAULT_ADMIN_EMAIL).toBe("");
     expect(values.api.DEFAULT_ADMIN_PASSWORD).toBe("");
+    expect(values.api.DEFAULT_ADMIN_BOOTSTRAP_ENABLED).toBe("false");
+    expect(loadConfig(values.api).defaultAdministrator).toBeNull();
+
+    values.api.DEFAULT_ADMIN_BOOTSTRAP_ENABLED = "true";
     expect(() => loadConfig(values.api)).toThrow(/DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD/);
+  });
+
+  test("falla cerrado ante defaults inseguros de producción", () => {
+    let secretIndex = 0;
+    const values = buildScenarioDefaults(
+      "production",
+      () => `${String(++secretIndex).padStart(2, "0")}${"z".repeat(32)}`,
+    );
+    values.api.CORS_ORIGINS = "*";
+    values.api.COOKIE_SECURE = "false";
+    values.agent.AGENT_HOST = "0.0.0.0";
+    values.agent.DEEPSEEK_API_KEY = "replace-with-provider-key";
+
+    expect(() => loadConfig(values.api)).toThrow(/CORS_ORIGINS, COOKIE_SECURE/);
+    expect(() => loadAgentConfig(values.agent)).toThrow(/AGENT_HOST, DEEPSEEK_API_KEY/);
+    expect(() => validateGeneratedConfiguration(values)).toThrow();
   });
 
   test("preserva valores existentes sin arrastrar defaults inseguros entre escenarios", () => {

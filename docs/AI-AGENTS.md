@@ -66,14 +66,15 @@ interactivo es `bun run update:env`.
 
 ### Proceso y MongoDB
 
-| Variable              | Default       | Uso                                           |
-| --------------------- | ------------- | --------------------------------------------- |
-| `NODE_ENV`            | `development` | Entorno runtime.                              |
-| `AGENT_HOST`          | `127.0.0.1`   | Interfaz HTTP privada.                        |
-| `AGENT_PORT`          | `4100`        | Puerto HTTP privado.                          |
-| `MONGODB_URI`         | requerido     | Misma instancia configurada para la API.      |
-| `MONGODB_DB`          | requerido     | Misma base existente configurada para la API. |
-| `AGENT_SERVICE_TOKEN` | requerido     | Secreto compartido API → agente.              |
+| Variable                  | Default       | Uso                                           |
+| ------------------------- | ------------- | --------------------------------------------- |
+| `NODE_ENV`                | `development` | Entorno runtime.                              |
+| `AGENT_HOST`              | `127.0.0.1`   | Interfaz HTTP privada.                        |
+| `ALLOW_PUBLIC_AGENT_BIND` | `false`       | Override explícito para bind no privado.      |
+| `AGENT_PORT`              | `4100`        | Puerto HTTP privado.                          |
+| `MONGODB_URI`             | requerido     | Misma instancia configurada para la API.      |
+| `MONGODB_DB`              | requerido     | Misma base existente configurada para la API. |
+| `AGENT_SERVICE_TOKEN`     | requerido     | Secreto compartido API → agente.              |
 
 ### DeepSeek
 
@@ -88,6 +89,11 @@ El cliente envía `thinking: { type: "enabled" }`, tools de función y
 `reasoning_effort`. El contrato de configuración y el contrato público del run
 fijan `deepseek-v4-pro`; no agregar aliases u otros proveedores sin una decisión
 de arquitectura explícita.
+
+En producción el agente rechaza bind público sin override y secretos/provider
+keys que parezcan placeholders. `ALLOW_PUBLIC_AGENT_BIND=true` reconoce una
+decisión de infraestructura; no agrega autenticación de red ni vuelve pública
+la interfaz por sí solo.
 
 ### Runtime
 
@@ -148,9 +154,11 @@ Salvo liveness, cada request requiere:
 - `x-service-signature`, HMAC de método, path, query y body;
 - `x-tenant-id`;
 - `x-actor-id`.
+- `x-actor-role`.
 
-El body y el contexto firmado deben coincidir. La API pública nunca reenvía
-tenant o actor sin resolverlos previamente desde la sesión.
+El HMAC cubre timestamp, método, path/query, tenant, actor, rol y body. El body
+y el contexto firmado deben coincidir. La API pública nunca reenvía tenant,
+actor o rol sin revalidarlos previamente desde la sesión.
 
 ## Ciclo de un run
 
@@ -169,14 +177,17 @@ También existe `cancel_requested` entre un run activo y su terminación.
 
 Flujo:
 
-1. `AgentStore.enqueue` valida idempotencia por `tenantId + idempotencyKey`.
+1. `AgentStore.enqueue` valida idempotencia por
+   `tenantId + actorId + idempotencyKey`.
 2. Crea o reutiliza la conversación.
 3. Persiste el mensaje del usuario y el primer evento.
 4. `Launcher` respeta concurrencia global y por tenant.
 5. Hace claim atómico del run y crea un proceso `process.ts`.
-6. El proceso marca `running`, emite heartbeat y ejecuta el orquestador.
+6. El proceso marca `running`, emite heartbeat cercado por `processId` y ejecuta
+   el orquestador con `AbortSignal`.
 7. El orquestador invoca DeepSeek y procesa como máximo 12 pasos.
-8. Cada mensaje, tool y cambio de estado se persiste antes de publicarse.
+8. Cada mensaje, ejecución de tool y cambio de estado se persiste antes de
+   publicarse.
 9. El proceso finaliza o queda `waiting` por una confirmation.
 10. `Supervisor` controla procesos ausentes, deadlines, heartbeat y
     cancelaciones.
@@ -184,12 +195,20 @@ Flujo:
 Un proceso que cae deja el run en `crashed`. Si no superó `retryLimit`, vuelve a
 `queued`.
 
-La cancelación:
+Cancelación y timeout:
 
 - cancela directamente runs `queued` o `waiting`;
 - marca `cancel_requested` para runs activos;
-- envía `SIGTERM`;
-- después de `AGENT_CANCEL_GRACE_MS`, usa `SIGKILL` y marca `killed`.
+- verifican que PID, process document y run conserven el mismo `processId`;
+- registran el pedido, envían `SIGTERM` y abortan provider/tools;
+- después de `AGENT_CANCEL_GRACE_MS`, vuelven a verificar ownership y usan
+  `SIGKILL` sólo si el proceso sigue activo;
+- el launcher registra el outcome terminal cuando observa la salida real.
+
+Heartbeats, transitions y side effects rechazan procesos tardíos. Cada tool se
+reclama por `runId + toolCallId + inputHash`: un resultado idempotente se
+reutiliza; un efecto no idempotente que quedó incierto no se repite
+automáticamente y exige reconciliación.
 
 ## Persistencia
 
@@ -203,15 +222,32 @@ Colecciones del runtime:
 | `agent_events`            | Stream ordenado por `runId + sequence`.           |
 | `agent_confirmations`     | Efectos críticos pendientes y resolución humana.  |
 | `agent_processes`         | PID, launcher y salida de cada proceso.           |
+| `agent_tool_executions`   | Claim, outcome e idempotencia de cada tool call.  |
 | `agent_uploads`           | Intents y metadata de uploads.                    |
 | `agent_artifacts`         | Metadata y hashes de outputs.                     |
-| `agent_deliveries`        | Envíos Telegram idempotentes.                     |
+| `agent_deliveries`        | Envíos Telegram y reconciliación de outcomes.     |
 | `agent_telegram_access`   | IDs autorizados administrados por la API.         |
 | `agent_telegram_sessions` | Chat → conversación durable.                      |
 | `agent_telegram_runtime`  | Offset, heartbeat, errores y backoff del polling. |
 
 El runtime usa la misma base configurada que la API. Nunca crea una base nueva
 ni usa MongoDB en memoria.
+
+`ensureIndexes` declara índices únicos directos para runs, conversations,
+processes, tool executions, uploads, artifacts y deliveries, además de los
+índices de claim, supervision, events, confirmations y Telegram. Las
+instalaciones previas migran `runs_tenant_idempotency_unique` creando primero
+`runs_tenant_actor_idempotency_unique` y retirando luego únicamente el índice
+legacy por nombre. Las
+definiciones de código no prueban que ya estén construidos en una base
+desplegada: `bun run --cwd apps/agent indexes:verify` realiza una inspección
+read-only de `listIndexes()` y `explain("executionStats")` usando exactamente el
+`MONGODB_URI`/`MONGODB_DB` autorizado.
+
+El scaffold no instala TTL de negocio. Cada producto debe aprobar retención por
+colección antes de borrar runs, events, messages, processes, uploads rechazados
+o deliveries; confirmations y registros de efectos pueden ser evidencia de
+auditoría y no deben expirar por conveniencia.
 
 ## Manifests
 
@@ -260,10 +296,22 @@ Cada tool debe declarar:
 - idempotencia;
 - función `execute`.
 
+El `ToolContext` incluye `processId`, `AbortSignal` y `assertActive`. Una tool
+debe invocar `assertActive` inmediatamente antes de comprometer un efecto y
+propagar el signal a I/O externo.
+
 Una tool `critical` no se ejecuta en el primer proceso. El runtime persiste una
-confirmation con hash del input, pasa el run a `waiting` y exige aprobación o
-rechazo. La confirmation vence a los 15 minutos. Al resolverse, el run vuelve a
-cola y reanuda el tool call exacto.
+confirmation con hash y preview server-owned, pasa el run a `waiting` y exige
+aprobación o rechazo. La confirmation vence a los 15 minutos. Al resolverse, el
+run vuelve a cola y reanuda el tool call exacto.
+
+`generate_csv` antepone una comilla simple a valores que, luego de whitespace,
+comienzan con `=`, `+`, `-` o `@`. `send_telegram_message` sólo acepta un
+`destinationId` UUID: resuelve un binding activo del tenant para el preview y
+lo vuelve a validar justo antes del envío; el modelo nunca aporta el chat ID.
+Como Telegram no ofrece una idempotency key para `sendMessage`, un outcome
+ambiguo no se reenvía automáticamente: delivery y tool quedan para
+reconciliación manual.
 
 No registrar tools MongoDB genéricas ni permitir que el modelo elija tenant,
 actor o rol.
@@ -344,7 +392,9 @@ Antes de entregar vuelve a verificar que el binding de Telegram siga activo y
 coincida con tenant, actor y rol. Si fue revocado, marca la entrega como
 `revoked`.
 
-Los envíos tienen registro idempotente y hasta tres intentos por llamada.
+Los envíos tienen registro durable. Un delivery ya marcado `sent` reutiliza su
+resultado; un estado `pending`/`failed` previo se trata como outcome incierto y
+no se reenvía a ciegas.
 
 ### Resiliencia y health
 

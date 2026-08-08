@@ -9,10 +9,11 @@ No es una demo de chat ni un conjunto de carpetas vacío: entrega una vertical
 funcional sobre la que un equipo puede crear un producto, manteniendo separados
 el plano público, el plano administrativo y la ejecución privada del agente.
 
-> **Estado:** candidato a publicación pública. El scaffold está implementado,
-> pero aún existen decisiones de licencia y gates P0 abiertos. Antes de usarlo
-> como base pública, consulta [Preparación para publicación](./docs/PUBLICATION.md)
-> y el backlog técnico [Stock42 New Era](./NEWERA.md).
+> **Estado:** public preview técnicamente preparado. Los gates P0 de código,
+> dependencias, secretos y documentación están cerrados; el repositorio continúa
+> privado hasta completar la revisión de GitHub y autorizar expresamente el
+> cambio de visibilidad. Consulta [Preparación para publicación](./docs/PUBLICATION.md)
+> y el roadmap [Stock42 New Era](./NEWERA.md).
 
 ## Qué problema resuelve
 
@@ -93,14 +94,14 @@ memoria de un único proceso.
 
 | Superficie          | Incluye                                                                                                                                                 |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identidad y tenancy | Administrador de plataforma idempotente, tenants, personas, roles `platform_admin`, `tenant_owner`, `operator` y `user`                                 |
-| Autenticación       | Access/refresh por cookies HttpOnly, rotación de refresh, CSRF ligado a sesión, CORS y rate limiting                                                    |
+| Identidad y tenancy | Bootstrap opcional de plataforma, tenants, personas y roles `platform_admin`, `tenant_owner`, `tenant_operator` y `tenant_user`                         |
+| Autenticación       | Access/refresh HttpOnly, revalidación de identidad/tenant, rotación de refresh, CSRF, CORS y rate limiting                                              |
 | API                 | Módulos por capacidad, contratos Zod, documentos MongoDB planos, Models y storages delgados, boot e índices idempotentes                                |
 | Tiempo real         | `/ws` sobre `WebSocketController`/`WebSocketControllers` nativos de `s42-core`, ticket de un uso, aislamiento por tenant, heartbeat y replay            |
 | Webapp              | Login tenant-aware, sesión BFF y creación de runs desde una experiencia Next.js para usuario final                                                      |
 | Backoffice          | Login de plataforma/tenant, gestión de tenants y personas, panel de agente, polling de eventos, cancelaciones, confirmations y CRUD de accesos Telegram |
-| Runtime agéntico    | Cola durable, launcher, procesos aislados, supervisor, reintentos, idempotencia, cancelación y modelo `deepseek-v4-pro`                                 |
-| Tools               | Contexto y fecha, inspección de uploads, generación CSV/PDF, listado de artifacts y envío crítico a Telegram con confirmación                           |
+| Runtime agéntico    | Cola durable, procesos cercados, abort, supervisor con grace, registro idempotente de efectos, cancelación y `deepseek-v4-pro`                          |
+| Tools               | Contexto y fecha, uploads por owner, CSV anti-fórmula, PDF, artifacts y Telegram sólo a destinos server-owned con confirmation preview                  |
 | Archivos            | Uploads y artifacts con metadata en MongoDB, bytes fuera de la base y descarga autorizada                                                               |
 | Telegram            | `getUpdates` opt-in en desarrollo, bindings administrados por servidor, conversaciones por chat, comandos de estado/cancelación y entrega de respuestas |
 | Calidad             | Unit tests con `bun:test`, integración API opt-in, E2E desktop/mobile con Playwright, boundaries y pipeline CI                                          |
@@ -202,8 +203,15 @@ bun run update:env
 
 El asistente configura interactivamente desarrollo, tests o producción y crea
 el `.env` de cada app con permisos `0600`. Sincroniza MongoDB y los secretos
-compartidos, pide las credenciales del administrador inicial y preserva
-variables adicionales existentes.
+compartidos, permite habilitar expresamente el administrador inicial y preserva
+variables adicionales existentes. En producción rechaza wildcards, cookies no
+seguras, flags de test, secretos placeholder/reutilizados y exposición
+accidental del agente.
+
+En un proyecto nuevo habilita `DEFAULT_ADMIN_BOOTSTRAP_ENABLED=true`, define
+email/password y realiza el primer arranque. Una vez creada la identidad, vuelve
+a ejecutar el asistente y deja el flag en `false`; el password de bootstrap ya
+no queda requerido durante steady state.
 
 No crea `.env.local`, no crea bases MongoDB y no imprime secretos. Usa siempre
 una base existente que estés autorizado a utilizar.
@@ -221,7 +229,8 @@ una base existente que estés autorizado a utilizar.
 | API           | `http://127.0.0.1:3822`                |
 | Agent runtime | `http://127.0.0.1:4100`, solo loopback |
 
-La API crea de forma idempotente el administrador configurado al arrancar. El
+La API crea de forma idempotente el administrador configurado al arrancar sólo
+si `DEFAULT_ADMIN_BOOTSTRAP_ENABLED=true`. El
 modo local mantiene Telegram deshabilitado aunque exista un token. El opt-in es:
 
 ```bash
@@ -248,6 +257,7 @@ No ejecutes webhook y `getUpdates` con el mismo bot. La ausencia de
 | `bun run boundaries`   | Validar dependencias entre apps y packages        |
 | `bun run format:check` | Verificar formato sin modificar archivos          |
 | `bun run audit`        | Auditar dependencias Bun                          |
+| `bun run secret-scan`  | Escanear todo el historial Git con Gitleaks       |
 
 La suite de integración API exige `API_TEST_ENABLED=true` y opera sobre el
 `MONGODB_DB` configurado. Revisa [GUIDE.md](./GUIDE.md#15-tests) antes de
@@ -297,15 +307,18 @@ La guía completa está en [AI Agents](./docs/AI-AGENTS.md#desarrollo-de-una-too
 - tickets WebSocket de un solo uso;
 - aislamiento tenant-aware en HTTP, WebSocket, agente y Telegram;
 - comunicación API → agente mediante token interno;
+- contexto tenant/actor/rol incluido en la firma interna;
+- recursos agénticos filtrados por owner o manager autorizado;
+- IP derivada sólo de proxies explícitamente confiables;
 - errores productivos sanitizados y logs sin credenciales;
-- confirmations para operaciones agénticas críticas;
+- effects abortables, fencing por proceso y confirmations con preview;
 - archivos descargables solo dentro de un contexto autorizado;
 - secretos locales ignorados por Git y generados con permisos restrictivos.
 
-Este baseline no sustituye el hardening específico de cada producto. Antes de
-producción deben resolverse los P0 de autorización por recurso, proxy/IP, side
-effects abortables, invariantes de datos, configuración fail-closed y gates de
-dependencias detallados en [NEWERA.md](./NEWERA.md#5-p0--corrección-seguridad-y-gates).
+Los P0 transversales auditados están implementados. Este baseline no sustituye
+el threat model, la política de retención, la observabilidad ni el hardening de
+infraestructura específicos de cada producto; los siguientes pasos están en
+[NEWERA.md](./NEWERA.md).
 
 ## Despliegue
 
@@ -320,7 +333,8 @@ En producción:
 - `build-all.sh` mantiene una allowlist de las dos apps Next.js;
 - API y agente ejecutan TypeScript con Bun sin generar `dist`;
 - `COOKIE_SECURE`, CORS, secretos y URLs internas deben configurarse de forma
-  estricta;
+  estricta; el proceso falla al arrancar si conserva defaults inseguros;
+- `TRUSTED_PROXIES` debe enumerar las IP exactas del reverse proxy;
 - health, límites de body, timeouts y proxy WebSocket deben validarse contra la
   infraestructura real.
 
@@ -339,18 +353,21 @@ contrato operativo.
 | [docs/PLAN-SCAFFOLDING-v0.md](./docs/PLAN-SCAFFOLDING-v0.md) | Decisiones de arquitectura que originaron el scaffold                  |
 | [NEWERA.md](./NEWERA.md)                                     | Riesgos, mejoras y roadmap priorizado P0–P3                            |
 | [docs/PUBLICATION.md](./docs/PUBLICATION.md)                 | Auditoría y checklist para convertirlo en template público             |
+| [CONTRIBUTING.md](./CONTRIBUTING.md)                         | Contrato de contribución, arquitectura y gates                         |
+| [SECURITY.md](./SECURITY.md)                                 | Versiones soportadas y reporte privado de vulnerabilidades             |
+| [LICENSE](./LICENSE)                                         | Apache License 2.0                                                     |
 | [AGENTS.md](./AGENTS.md)                                     | Reglas obligatorias para agentes de código que trabajen en el repo     |
 
 ## Publicación y contribuciones
 
-El objetivo es que cualquier desarrollador pueda generar un proyecto nuevo a
-partir de este repositorio. Para lograrlo de forma responsable todavía deben
-definirse la licencia, el modelo de contribución, el canal de seguridad y las
-reglas de gobierno. Mientras no exista un archivo `LICENSE`, la mera visibilidad
-pública del código no concede automáticamente permisos de uso, modificación o
-redistribución.
+El código se distribuye bajo [Apache License 2.0](./LICENSE). Las contribuciones
+aceptadas usan el mismo esquema inbound=outbound, sin CLA ni DCO adicional;
+consulta [CONTRIBUTING.md](./CONTRIBUTING.md). Las vulnerabilidades se reportan
+de forma privada según [SECURITY.md](./SECURITY.md), nunca mediante un issue
+público.
 
-No cambies la visibilidad del repositorio hasta completar el checklist de
+El push de código no cambia la visibilidad. No hagas público el repositorio
+hasta completar el checklist operativo de
 [docs/PUBLICATION.md](./docs/PUBLICATION.md). Ese cambio hace públicos también
 el historial Git y el historial visible de GitHub Actions, y permite copias y
 forks que no pueden retirarse de terceros más adelante.

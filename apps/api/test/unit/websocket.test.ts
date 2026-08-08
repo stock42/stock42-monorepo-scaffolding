@@ -4,6 +4,7 @@ import { WebSocketServerMessageSchema } from "@stock42/contracts/websocket";
 import type { WebSocketData } from "s42-core";
 import type { ApiConfig } from "@/config";
 import type { AgentClient } from "@/modules/agent/services/AgentClient";
+import type { AuthService } from "@/modules/auth/services/AuthService";
 import { WebSocketGateway } from "@/websocket/WebSocketGateway";
 import type { WebSocketTicketService } from "@/websocket/WebSocketTicketService";
 
@@ -27,7 +28,14 @@ describe("native s42-core WebSocket gateway", () => {
         return actor;
       },
     } as unknown as WebSocketTicketService;
-    gateway = new WebSocketGateway(tickets, {} as AgentClient, { corsOrigins: ["*"] } as ApiConfig);
+    const auth = {
+      async revalidateActor(candidate: SessionActor) {
+        return candidate;
+      },
+    } as AuthService;
+    gateway = new WebSocketGateway(tickets, {} as AgentClient, auth, {
+      corsOrigins: ["*"],
+    } as ApiConfig);
 
     server = Bun.serve({
       hostname: "127.0.0.1",

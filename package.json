@@ -37,6 +37,7 @@
     "test:api": "turbo run test:api --filter=@stock42/api",
     "test:e2e": "turbo run test:e2e --filter=@stock42/webapp --filter=@stock42/backoffice",
     "boundaries": "bun test scripts/check-boundaries.test.ts && bun run scripts/check-boundaries.ts",
+    "secret-scan": "gitleaks git --redact=100 --log-opts=--all .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "audit": "bun audit"
@@ -47,7 +48,11 @@
     "typescript": "catalog:"
   },
   "overrides": {
-    "brace-expansion": "5.0.8",
+    "brace-expansion": "5.0.9",
+    "fast-uri": "3.1.5",
+    "hono": "4.12.34",
+    "js-yaml": "4.3.1",
+    "nanoid": "3.3.17",
     "postcss": "8.5.24",
     "sharp": "0.35.3"
   },

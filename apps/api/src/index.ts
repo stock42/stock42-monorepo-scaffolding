@@ -5,6 +5,7 @@ import { loadConfig } from "@/config";
 import { errorResponse } from "@/errors/handler";
 import { corsPreflight, resolveCorsOrigin, withCors } from "@/http/cors";
 import { fileGateway } from "@/modules/files/gateway";
+import { resolveClientIp } from "@/security/client-ip";
 
 export type RunningApi = {
   server: Bun.Server<WebSocketData>;
@@ -53,18 +54,28 @@ export async function startApi(): Promise<RunningApi> {
       }
 
       try {
-        context.rateLimiter.consume(
-          `http:${request.headers.get("x-forwarded-for") ?? bunServer.requestIP(request)?.address ?? "unknown"}`,
+        const clientIp = resolveClientIp({
+          peerAddress: bunServer.requestIP(request)?.address,
+          forwardedFor: request.headers.get("x-forwarded-for"),
+          trustedProxies: config.trustedProxies,
+        });
+        const requestHeaders = new Headers(request.headers);
+        requestHeaders.set("x-forwarded-for", clientIp);
+        const normalizedRequest = new Request(request, { headers: requestHeaders });
+        const quota = context.rateLimiter.consume(
+          `http:${clientIp}`,
           config.rateLimit.requests,
           config.rateLimit.windowSeconds,
         );
-        const fileResponse = await fileGateway(request);
+        const fileResponse = await fileGateway(normalizedRequest);
         if (fileResponse) {
-          return withCors(request, fileResponse, config.corsOrigins);
+          applyRateLimitHeaders(fileResponse.headers, quota);
+          return withCors(normalizedRequest, fileResponse, config.corsOrigins);
         }
         const response =
-          (await routeCallback(request)) ?? new Response("Not Found", { status: 404 });
-        return withCors(request, response, config.corsOrigins);
+          (await routeCallback(normalizedRequest)) ?? new Response("Not Found", { status: 404 });
+        applyRateLimitHeaders(response.headers, quota);
+        return withCors(normalizedRequest, response, config.corsOrigins);
       } catch (cause) {
         return withCors(
           request,
@@ -100,6 +111,18 @@ export async function startApi(): Promise<RunningApi> {
   };
 
   return { server, close };
+}
+
+function applyRateLimitHeaders(
+  headers: Headers,
+  quota: { limit: number; remaining: number; resetAt: number },
+): void {
+  headers.set("RateLimit-Limit", String(quota.limit));
+  headers.set("RateLimit-Remaining", String(quota.remaining));
+  headers.set(
+    "RateLimit-Reset",
+    String(Math.max(1, Math.ceil((quota.resetAt - Date.now()) / 1_000))),
+  );
 }
 
 if (import.meta.main) {

@@ -76,25 +76,53 @@ export class Launcher {
     this.children.delete(processId);
     await this.store.markProcessExited(processId, exitCode);
     const run = await this.store.getRun(runId);
-    if (!run) return;
+    if (!run || run.processId !== processId) return;
     if (run.status === "cancel_requested") {
-      await this.store.transition(runId, "cancelled", {
-        terminalReason: "cancelled_by_actor",
-      });
+      const forced = run.terminalReason === "cancel_grace_exceeded";
+      await this.store.transition(
+        runId,
+        forced ? "killed" : "cancelled",
+        { terminalReason: forced ? "cancel_grace_exceeded" : "cancelled_by_actor" },
+        processId,
+      );
       return;
     }
     if (run.status === "starting" || run.status === "running") {
-      const crashed = await this.store.transition(runId, "crashed", {
-        terminalReason: `process_exit_${exitCode}`,
-      });
+      if (
+        run.terminationRequestedAt &&
+        (run.terminalReason === "deadline_exceeded" ||
+          run.terminalReason === "heartbeat_stale" ||
+          run.terminalReason?.endsWith(":sigkill"))
+      ) {
+        await this.store.transition(
+          runId,
+          "timed_out",
+          { terminalReason: run.terminalReason },
+          processId,
+        );
+        return;
+      }
+      const crashed = await this.store.transition(
+        runId,
+        "crashed",
+        {
+          terminalReason: `process_exit_${exitCode}`,
+        },
+        processId,
+      );
       if (crashed.attempt <= crashed.retryLimit) {
-        await this.store.transition(runId, "queued", {
-          claimedBy: null,
-          processId: null,
-          pid: null,
-          heartbeatAt: null,
-          terminationRequestedAt: null,
-        });
+        await this.store.transition(
+          runId,
+          "queued",
+          {
+            claimedBy: null,
+            processId: null,
+            pid: null,
+            heartbeatAt: null,
+            terminationRequestedAt: null,
+          },
+          processId,
+        );
       }
     }
   }

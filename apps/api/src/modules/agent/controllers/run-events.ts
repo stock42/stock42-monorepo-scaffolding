@@ -18,6 +18,7 @@ export default controller({
       request.params.id ?? "",
       tenantId,
       actor.uuid,
+      actor.role,
       cursor,
     );
     return response.json(result);

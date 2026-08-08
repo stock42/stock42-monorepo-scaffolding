@@ -19,6 +19,7 @@ export default controller({
       "approved",
       tenantId,
       actor.uuid,
+      actor.role,
     );
     return response.json(result);
   },

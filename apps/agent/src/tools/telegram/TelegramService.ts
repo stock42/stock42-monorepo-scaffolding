@@ -20,6 +20,8 @@ export class TelegramService {
     chatId: string;
     text: string;
     idempotencyKey?: string;
+    signal?: AbortSignal;
+    assertActive?: () => Promise<void>;
   }): Promise<{ deliveryId: string; externalId: string }> {
     if (!this.config.telegram.botToken) {
       throw new Error("Telegram no está configurado.");
@@ -34,62 +36,100 @@ export class TelegramService {
     if (existing?.status === "sent" && existing.externalId) {
       return { deliveryId: existing.uuid, externalId: existing.externalId };
     }
+    if (existing) {
+      throw new Error("El envío Telegram previo requiere reconciliación manual.");
+    }
 
     const now = new Date().toISOString();
-    const delivery: DeliveryDocument =
-      existing ??
-      ({
-        uuid: crypto.randomUUID(),
-        tenantId: input.tenantId,
-        runId: input.runId,
-        provider: "telegram",
-        idempotencyKey,
-        status: "pending",
-        externalId: null,
-        attempts: 0,
-        lastError: null,
-        createdAt: now,
-        updatedAt: now,
-      } satisfies DeliveryDocument);
-    if (!existing) await this.store.deliveriesCollection.insertOne(delivery);
+    const delivery: DeliveryDocument = {
+      uuid: crypto.randomUUID(),
+      tenantId: input.tenantId,
+      runId: input.runId,
+      provider: "telegram",
+      idempotencyKey,
+      status: "pending",
+      externalId: null,
+      attempts: 0,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.store.deliveriesCollection.insertOne(delivery);
 
-    let lastError = "Telegram delivery failed";
-    const lastAttempt = delivery.attempts + 3;
-    for (let attempt = delivery.attempts + 1; attempt <= lastAttempt; attempt += 1) {
-      try {
-        const externalId = await this.client.sendMessage(input.chatId, input.text);
-        await this.store.deliveriesCollection.updateOne(
-          { uuid: delivery.uuid },
-          {
-            $set: {
-              status: "sent",
-              externalId,
-              attempts: attempt,
-              lastError: null,
-              updatedAt: new Date().toISOString(),
-            },
+    try {
+      await input.assertActive?.();
+      const externalId = await this.client.sendMessage(input.chatId, input.text, input.signal);
+      await this.store.deliveriesCollection.updateOne(
+        { uuid: delivery.uuid },
+        {
+          $set: {
+            status: "sent",
+            externalId,
+            attempts: 1,
+            lastError: null,
+            updatedAt: new Date().toISOString(),
           },
-        );
-        return { deliveryId: delivery.uuid, externalId };
-      } catch (cause) {
-        lastError = sanitizedTelegramError(
-          cause,
-          this.config.telegram.botToken,
-          "Telegram delivery failed",
-        );
-        await this.store.deliveriesCollection.updateOne(
-          { uuid: delivery.uuid },
-          {
-            $set: {
-              status: "failed",
-              attempts: attempt,
-              lastError,
-              updatedAt: new Date().toISOString(),
-            },
+        },
+      );
+      return { deliveryId: delivery.uuid, externalId };
+    } catch (cause) {
+      const lastError = sanitizedTelegramError(
+        cause,
+        this.config.telegram.botToken,
+        "Telegram delivery outcome uncertain",
+      );
+      await this.store.deliveriesCollection.updateOne(
+        { uuid: delivery.uuid },
+        {
+          $set: {
+            status: "failed",
+            attempts: 1,
+            lastError,
+            updatedAt: new Date().toISOString(),
           },
-        );
-      }
+        },
+      );
+      throw new Error(lastError);
     }
-    throw new Error(lastError);
+  }
+
+  async previewDestination(input: { tenantId: string; destinationId: string; text: string }) {
+    const access = await this.store.findActiveTelegramDestination(
+      input.destinationId,
+      input.tenantId,
+    );
+    if (!access) throw new Error("Destino Telegram no encontrado.");
+    return {
+      destinationId: access.uuid,
+      destinationLabel: access.label,
+      telegramUserId: access.telegramUserId,
+      tenantId: access.tenantId,
+      messagePreview: input.text.slice(0, 500),
+    };
+  }
+
+  async sendToDestination(input: {
+    tenantId: string;
+    runId: string;
+    destinationId: string;
+    text: string;
+    signal: AbortSignal;
+    assertActive: () => Promise<void>;
+  }): Promise<{ deliveryId: string; externalId: string }> {
+    await input.assertActive();
+    const access = await this.store.findActiveTelegramDestination(
+      input.destinationId,
+      input.tenantId,
+    );
+    if (!access) throw new Error("Destino Telegram no encontrado.");
+    return this.send({
+      tenantId: input.tenantId,
+      runId: input.runId,
+      chatId: access.telegramUserId,
+      text: input.text,
+      idempotencyKey: `${input.runId}:${input.destinationId}:${input.text}`,
+      signal: input.signal,
+      assertActive: input.assertActive,
+    });
   }
 }

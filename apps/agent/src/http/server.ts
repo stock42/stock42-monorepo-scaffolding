@@ -5,6 +5,7 @@ import {
 import { UploadIntentInputSchema } from "@stock42/contracts/files";
 import type { AgentConfig } from "@/config";
 import type { AgentStore } from "@/runtime/store/AgentStore";
+import { AgentResourceNotFoundError } from "@/runtime/store/AgentStore";
 import type { ToolRegistry } from "@/tools/registry/ToolRegistry";
 import { authenticateServiceRequest } from "./service-auth";
 
@@ -84,7 +85,7 @@ export function startInternalServer(
       }
 
       const body = new Uint8Array(await request.arrayBuffer());
-      let serviceContext: { tenantId: string; actorId: string };
+      let serviceContext: ReturnType<typeof authenticateServiceRequest>;
       try {
         serviceContext = authenticateServiceRequest(request, body, config);
       } catch {
@@ -113,7 +114,8 @@ export function startInternalServer(
           );
           if (
             envelope.tenantId !== serviceContext.tenantId ||
-            envelope.actorId !== serviceContext.actorId
+            envelope.actorId !== serviceContext.actorId ||
+            envelope.actorRole !== serviceContext.actorRole
           ) {
             return publicError(403, "El contexto firmado no coincide con el contrato.");
           }
@@ -125,20 +127,34 @@ export function startInternalServer(
         if (request.method === "GET" && eventsMatch?.[1]) {
           const cursor = Number.parseInt(url.searchParams.get("cursor") ?? "0", 10);
           if (!Number.isInteger(cursor) || cursor < 0) return publicError(400, "Cursor inválido.");
-          const result = await store.listEvents(eventsMatch[1], serviceContext.tenantId, cursor);
+          const result = await store.listEvents(
+            eventsMatch[1],
+            serviceContext.tenantId,
+            serviceContext,
+            cursor,
+          );
+          if (!result) return publicError(404, "Run no encontrado.");
           return json({ ok: true, data: result });
         }
 
         const cancelMatch = url.pathname.match(/^\/internal\/runs\/([0-9a-f-]{36})\/cancel$/);
         if (request.method === "POST" && cancelMatch?.[1]) {
-          const run = await store.requestCancellation(cancelMatch[1], serviceContext.tenantId);
+          const run = await store.requestCancellation(
+            cancelMatch[1],
+            serviceContext.tenantId,
+            serviceContext,
+          );
           if (!run) return publicError(404, "Run no encontrado.");
           return json({ ok: true, data: store.toPublicRun(run) });
         }
 
         const runMatch = url.pathname.match(/^\/internal\/runs\/([0-9a-f-]{36})$/);
         if (request.method === "GET" && runMatch?.[1]) {
-          const run = await store.getRun(runMatch[1], serviceContext.tenantId);
+          const run = await store.getRunForActor(
+            runMatch[1],
+            serviceContext.tenantId,
+            serviceContext,
+          );
           if (!run) return publicError(404, "Run no encontrado.");
           return json({ ok: true, data: store.toPublicRun(run) });
         }
@@ -154,6 +170,7 @@ export function startInternalServer(
             confirmationMatch[1],
             serviceContext.tenantId,
             serviceContext.actorId,
+            serviceContext.actorRole,
             input.decision,
           );
           if (!run) return publicError(404, "Confirmation no encontrada o ya resuelta.");
@@ -215,7 +232,11 @@ export function startInternalServer(
 
         const artifactMatch = url.pathname.match(/^\/internal\/artifacts\/([0-9a-f-]{36})$/);
         if (request.method === "GET" && artifactMatch?.[1]) {
-          const result = await tools.artifacts.get(artifactMatch[1], serviceContext.tenantId);
+          const result = await tools.artifacts.get(
+            artifactMatch[1],
+            serviceContext.tenantId,
+            serviceContext,
+          );
           if (!result) return publicError(404, "Artifact no encontrado.");
           return new Response(result.file, {
             headers: {
@@ -229,6 +250,9 @@ export function startInternalServer(
 
         return publicError(404, "Endpoint interno no encontrado.");
       } catch (cause) {
+        if (cause instanceof AgentResourceNotFoundError) {
+          return publicError(404, "Recurso no encontrado.");
+        }
         const errorId = crypto.randomUUID();
         console.error("Agent internal request failed", {
           errorId,

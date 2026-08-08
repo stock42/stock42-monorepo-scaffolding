@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ActorRoleSchema } from "./auth";
 import { IsoDateSchema, UuidSchema, createSuccessSchema } from "./common";
 
 export const AgentRunStatusSchema = z.enum([
@@ -100,7 +101,7 @@ export const AgentRunEventsResponseSchema = createSuccessSchema(
 export const InternalRunEnvelopeSchema = z.object({
   tenantId: UuidSchema,
   actorId: UuidSchema,
-  actorRole: z.string().min(1),
+  actorRole: ActorRoleSchema,
   request: CreateAgentRunInputSchema,
 });
 

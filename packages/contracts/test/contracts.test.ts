@@ -5,6 +5,7 @@ import {
   CreateAgentRunInputSchema,
   CreateTenantInputSchema,
   LoginInputSchema,
+  InternalRunEnvelopeSchema,
   TelegramAiAccessSchema,
   WebSocketClientMessageSchema,
 } from "../src";
@@ -40,6 +41,21 @@ describe("shared contracts", () => {
       CreateAgentRunInputSchema.safeParse({
         task: "Prepare the report",
         idempotencyKey: "short",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("restricts the signed internal agent role to the shared role contract", () => {
+    expect(
+      InternalRunEnvelopeSchema.safeParse({
+        tenantId: crypto.randomUUID(),
+        actorId: crypto.randomUUID(),
+        actorRole: "invented_manager",
+        request: {
+          task: "Prepare the report",
+          idempotencyKey: crypto.randomUUID(),
+          metadata: {},
+        },
       }).success,
     ).toBe(false);
   });

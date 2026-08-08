@@ -1,9 +1,12 @@
 import type { AgentRunEvent } from "@stock42/contracts/agent";
+import type { ActorRole } from "@stock42/contracts/auth";
 import type { AgentClient } from "@/modules/agent/services/AgentClient";
 
 type TrackedRun = {
   runId: string;
   tenantId: string;
+  actorId: string;
+  actorRole: ActorRole;
   cursor: number;
   subscribers: number;
 };
@@ -28,14 +31,14 @@ export class AgentEventBridge {
     this.timer = null;
   }
 
-  track(runId: string, tenantId: string, cursor = 0): void {
+  track(runId: string, tenantId: string, actorId: string, actorRole: ActorRole, cursor = 0): void {
     const current = this.tracked.get(runId);
     if (current) {
       current.subscribers += 1;
       current.cursor = Math.min(current.cursor, cursor);
       return;
     }
-    this.tracked.set(runId, { runId, tenantId, cursor, subscribers: 1 });
+    this.tracked.set(runId, { runId, tenantId, actorId, actorRole, cursor, subscribers: 1 });
   }
 
   untrack(runId: string): void {
@@ -54,7 +57,8 @@ export class AgentEventBridge {
           const response = await this.client.events(
             tracked.runId,
             tracked.tenantId,
-            "00000000-0000-4000-8000-000000000000",
+            tracked.actorId,
+            tracked.actorRole,
             tracked.cursor,
           );
           for (const event of response.data.events) this.publish(event);

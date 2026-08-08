@@ -7,7 +7,7 @@ export default controller({
   method: "GET",
   path: "/auth/me",
   async handler(request, response) {
-    const claims = await getAppContext().auth.authenticate(request.headers);
+    const claims = await getAppContext().auth.authenticateActive(request.headers);
     return response.json({ ok: true, data: { actor: claims.actor } });
   },
 });

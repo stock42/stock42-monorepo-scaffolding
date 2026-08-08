@@ -8,7 +8,7 @@ export async function authenticatedRequest(
   options: { csrf?: boolean } = {},
 ): Promise<{ actor: SessionActor; sid: string }> {
   const context = getAppContext();
-  const claims = await context.auth.authenticate(request.headers);
+  const claims = await context.auth.authenticateActive(request.headers);
   if (options.csrf) requireCsrf(request, claims.sid, context.config);
   return { actor: claims.actor, sid: claims.sid };
 }

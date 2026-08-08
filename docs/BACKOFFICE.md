@@ -180,8 +180,9 @@ Flujo de ejecución:
 7. reintenta cada 3 segundos después de un error;
 8. muestra respuesta, estado e intento;
 9. permite cancelar;
-10. detecta `confirmation.required`;
-11. permite aprobar o rechazar;
+10. detecta `confirmation.required` y muestra tool, destino, tenant y preview
+    server-owned cuando están disponibles;
+11. permite aprobar o rechazar sin permitir editar los argumentos;
 12. deja de consultar al llegar a un estado terminal.
 
 Estados terminales:
@@ -195,6 +196,11 @@ Estados terminales:
 
 La pantalla usa replay HTTP. La API tiene WebSocket, pero este componente no lo
 usa todavía.
+
+La autorización final no depende del panel: `tenant_operator` sólo opera runs y
+confirmations propios; `tenant_owner` puede administrar recursos del tenant y
+`platform_admin` del tenant seleccionado. Una denegación server-side se presenta
+como recurso no encontrado.
 
 ## Telegram AI
 

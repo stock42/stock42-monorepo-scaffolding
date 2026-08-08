@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { loadAgentConfig } from "@/config";
 import { startInternalServer } from "@/http/server";
 import { createAssistantManifest } from "@/runtime/contracts/manifest";
+import { canAccessOwnedResource, ownerFilter } from "@/runtime/authorization";
 import type { AgentStore } from "@/runtime/store/AgentStore";
+import { commandArgumentsMatchRun } from "@/runtime/supervisor/Supervisor";
 import { TelegramApiError, TelegramClient } from "@/telegram/TelegramClient";
 import { TelegramPollingRuntime } from "@/telegram/TelegramPollingRuntime";
-import { ToolRegistry } from "@/tools/registry/ToolRegistry";
+import { csvCell, ToolRegistry } from "@/tools/registry/ToolRegistry";
 
 function testConfig(overrides: Record<string, string | undefined> = {}) {
   return loadAgentConfig({
@@ -36,6 +38,25 @@ describe("durable agent baseline", () => {
     expect(manifest.actionLevel).toBe("A3");
   });
 
+  test("matches the OS process command to the claimed run and process", () => {
+    const runId = "10000000-0000-4000-8000-000000000001";
+    const processId = "10000000-0000-4000-8000-000000000002";
+    expect(
+      commandArgumentsMatchRun(
+        ["bun", "process.ts", "--run-id", runId, "--process-id", processId],
+        runId,
+        processId,
+      ),
+    ).toBe(true);
+    expect(
+      commandArgumentsMatchRun(
+        ["bun", "process.ts", "--run-id", runId, "--process-id", "other"],
+        runId,
+        processId,
+      ),
+    ).toBe(false);
+  });
+
   test("has bounded domain tools and no generic MongoDB tools", () => {
     const registry = new ToolRegistry(testConfig(), {} as AgentStore);
     const tools = registry.list();
@@ -44,6 +65,51 @@ describe("durable agent baseline", () => {
     expect(tools.some((tool) => tool.actionClass === "critical")).toBe(true);
     expect(tools.map((tool) => tool.name)).not.toContain("mongodb_find");
     expect(tools.map((tool) => tool.name)).not.toContain("mongodb_aggregate");
+  });
+
+  test("enforces the published actor ownership matrix", () => {
+    const ownerId = "10000000-0000-4000-8000-000000000001";
+    const otherActorId = "10000000-0000-4000-8000-000000000002";
+    expect(canAccessOwnedResource(ownerId, { actorId: ownerId, actorRole: "tenant_user" })).toBe(
+      true,
+    );
+    expect(
+      canAccessOwnedResource(ownerId, {
+        actorId: otherActorId,
+        actorRole: "tenant_operator",
+      }),
+    ).toBe(false);
+    expect(
+      canAccessOwnedResource(ownerId, { actorId: otherActorId, actorRole: "tenant_owner" }),
+    ).toBe(true);
+    expect(ownerFilter("actorId", { actorId: otherActorId, actorRole: "tenant_user" })).toEqual({
+      actorId: otherActorId,
+    });
+    expect(ownerFilter("actorId", { actorId: otherActorId, actorRole: "platform_admin" })).toEqual(
+      {},
+    );
+  });
+
+  test("neutralizes spreadsheet formulas in exported CSV cells", () => {
+    expect(csvCell('=WEBSERVICE("https://example.test")')).toBe(
+      `"'=WEBSERVICE(""https://example.test"")"`,
+    );
+    expect(csvCell("  -2+3")).toBe(`"'  -2+3"`);
+    expect(csvCell("ordinary value")).toBe(`"ordinary value"`);
+  });
+
+  test("requires a server-owned Telegram destination instead of a chat id", () => {
+    const registry = new ToolRegistry(testConfig(), {} as AgentStore);
+    const telegramTool = registry.get("send_telegram_message");
+    const schema = telegramTool.inputSchema;
+    expect(telegramTool.idempotent).toBe(false);
+    expect(schema.safeParse({ chatId: "123", text: "hola" }).success).toBe(false);
+    expect(
+      schema.safeParse({
+        destinationId: "10000000-0000-4000-8000-000000000001",
+        text: "hola",
+      }).success,
+    ).toBe(true);
   });
 
   test("requires both the Telegram polling flag and bot token", () => {

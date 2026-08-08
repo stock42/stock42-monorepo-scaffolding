@@ -12,7 +12,12 @@ export default controller({
     const context = getAppContext();
     const { actor } = await authenticatedRequest(request);
     const tenantId = resolveAgentTenant(actor, request.query.tenantId);
-    const result = await context.agentClient.getRun(request.params.id ?? "", tenantId, actor.uuid);
+    const result = await context.agentClient.getRun(
+      request.params.id ?? "",
+      tenantId,
+      actor.uuid,
+      actor.role,
+    );
     return response.json(result);
   },
 });

@@ -11,7 +11,7 @@ export async function fileGateway(request: Request): Promise<Response | null> {
 
   const context = getAppContext();
   try {
-    const claims = await context.auth.authenticate(request.headers);
+    const claims = await context.auth.authenticateActive(request.headers);
     if (!claims.actor.tenantId) {
       throw new HttpError(403, "FORBIDDEN", "Tenant requerido.");
     }
@@ -31,6 +31,7 @@ export async function fileGateway(request: Request): Promise<Response | null> {
         new Uint8Array(await request.arrayBuffer()),
         claims.actor.tenantId,
         claims.actor.uuid,
+        claims.actor.role,
       );
       return Response.json(result);
     }
@@ -40,6 +41,7 @@ export async function fileGateway(request: Request): Promise<Response | null> {
         artifact[1],
         claims.actor.tenantId,
         claims.actor.uuid,
+        claims.actor.role,
       );
       if (!upstream.ok) {
         throw new HttpError(404, "NOT_FOUND", "Artifact no encontrado.");

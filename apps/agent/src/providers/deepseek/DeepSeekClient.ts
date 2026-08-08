@@ -46,35 +46,47 @@ export type DeepSeekMessage = {
 export class DeepSeekClient {
   constructor(private readonly config: AgentConfig["deepseek"]) {}
 
-  async complete(messages: DeepSeekMessage[], tools: ToolDefinition[]) {
-    const response = await fetch(new URL("/chat/completions", this.config.baseUrl), {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${this.config.apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "deepseek-v4-pro",
-        messages,
-        tools: tools.map((tool) => ({
-          type: "function",
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: z.toJSONSchema(tool.inputSchema),
-          },
-        })),
-        tool_choice: "auto",
-        thinking: { type: "enabled" },
-        reasoning_effort: this.config.reasoningEffort,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    if (!response.ok) {
-      throw new Error(`DeepSeek request failed with status ${response.status}`);
+  async complete(messages: DeepSeekMessage[], tools: ToolDefinition[], signal: AbortSignal) {
+    const requestController = new AbortController();
+    const timeout = setTimeout(
+      () => requestController.abort(new Error("deepseek_timeout")),
+      120_000,
+    );
+    const abort = () => requestController.abort(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      const response = await fetch(new URL("/chat/completions", this.config.baseUrl), {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.config.apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "deepseek-v4-pro",
+          messages,
+          tools: tools.map((tool) => ({
+            type: "function",
+            function: {
+              name: tool.name,
+              description: tool.description,
+              parameters: z.toJSONSchema(tool.inputSchema),
+            },
+          })),
+          tool_choice: "auto",
+          thinking: { type: "enabled" },
+          reasoning_effort: this.config.reasoningEffort,
+          stream: false,
+        }),
+        signal: requestController.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`DeepSeek request failed with status ${response.status}`);
+      }
+      const parsed = CompletionResponseSchema.parse(await response.json());
+      return parsed.choices[0]!.message;
+    } finally {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
     }
-    const parsed = CompletionResponseSchema.parse(await response.json());
-    return parsed.choices[0]!.message;
   }
 }

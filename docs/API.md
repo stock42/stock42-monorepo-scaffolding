@@ -70,6 +70,7 @@ El listener tiene:
 - `idleTimeout` de 30 segundos;
 - body máximo de 12 MiB;
 - CORS y rate limit antes del despacho;
+- IP normalizada desde el peer y proxies explícitamente confiables;
 - gateway binario explícito para uploads y artifacts;
 - upgrade y lifecycle WebSocket administrados por `s42-core`;
 - errores sanitizados con `errorId`;
@@ -85,7 +86,7 @@ El listener tiene:
 4. registro del contexto en `Dependencies` de `s42-core`;
 5. migraciones idempotentes;
 6. índices propiedad de cada módulo;
-7. bootstrap idempotente del administrador de plataforma configurado;
+7. bootstrap idempotente del administrador sólo bajo opt-in;
 8. seeds de test, sólo si están habilitados explícitamente;
 9. cambio de readiness a `true`.
 
@@ -100,36 +101,47 @@ bases de test implícitas.
 
 ## Configuración
 
-| Variable                    | Default          | Uso                                                       |
-| --------------------------- | ---------------- | --------------------------------------------------------- |
-| `NODE_ENV`                  | `development`    | Entorno runtime.                                          |
-| `API_HOST`                  | `127.0.0.1`      | Interfaz del listener.                                    |
-| `API_PORT`                  | `3822`           | Puerto HTTP y WebSocket.                                  |
-| `MONGODB_URI`               | requerido        | URI de una base MongoDB existente.                        |
-| `MONGODB_DB`                | requerido        | Nombre exacto de la base existente.                       |
-| `DEFAULT_ADMIN_EMAIL`       | requerido        | Email normalizado del administrador inicial.              |
-| `DEFAULT_ADMIN_PASSWORD`    | requerido        | Password inicial; entre 12 y 256 caracteres.              |
-| `AUTH_ACCESS_SECRET`        | requerido        | Firma HMAC del access token; mínimo 32 caracteres.        |
-| `AUTH_REFRESH_SECRET`       | requerido        | Firma HMAC del refresh token; mínimo 32 caracteres.       |
-| `CSRF_SECRET`               | requerido        | Firma y binding de CSRF; mínimo 32 caracteres.            |
-| `WEBSOCKET_TICKET_SECRET`   | requerido        | Firma de tickets WebSocket de un solo uso.                |
-| `CORS_ORIGINS`              | `*`              | Allowlist separada por comas; producción la restringe.    |
-| `COOKIE_SECURE`             | `false`          | Agrega `Secure` a las cookies.                            |
-| `ACCESS_TOKEN_TTL_SECONDS`  | `900`            | Vida del access token.                                    |
-| `REFRESH_TOKEN_TTL_SECONDS` | `604800`         | Vida del refresh token.                                   |
-| `AGENT_INTERNAL_URL`        | `127.0.0.1:4100` | URL privada de `apps/agent`.                              |
-| `AGENT_SERVICE_TOKEN`       | requerido        | Token compartido para API → agente; mínimo 32 caracteres. |
-| `RATE_LIMIT_ENABLED`        | `true`           | Activa el rate limit local del proceso.                   |
-| `RATE_LIMIT_WINDOW_SECONDS` | `60`             | Ventana de rate limit.                                    |
-| `RATE_LIMIT_REQUESTS`       | `120`            | Límite HTTP general por origen.                           |
-| `RATE_LIMIT_LOGIN_REQUESTS` | `10`             | Límite específico de login.                               |
-| `RATE_LIMIT_AGENT_REQUESTS` | `20`             | Límite por tenant y actor para crear runs.                |
-| `API_TEST_ENABLED`          | `false`          | Habilita integración contra la base configurada.          |
-| `API_TEST_SEEDS`            | `false`          | Habilita el paso explícito de seeds.                      |
-| `TEST_TENANT_ID`            | vacío            | Tenant existente autorizado para tests.                   |
+| Variable                          | Default          | Uso                                                    |
+| --------------------------------- | ---------------- | ------------------------------------------------------ |
+| `NODE_ENV`                        | `development`    | Entorno runtime.                                       |
+| `API_HOST`                        | `127.0.0.1`      | Interfaz del listener.                                 |
+| `API_PORT`                        | `3822`           | Puerto HTTP y WebSocket.                               |
+| `MONGODB_URI`                     | requerido        | URI de una base MongoDB existente.                     |
+| `MONGODB_DB`                      | requerido        | Nombre exacto de la base existente.                    |
+| `DEFAULT_ADMIN_BOOTSTRAP_ENABLED` | `false`          | Opt-in para crear el administrador inicial.            |
+| `DEFAULT_ADMIN_EMAIL`             | vacío            | Requerido sólo cuando el bootstrap está activo.        |
+| `DEFAULT_ADMIN_PASSWORD`          | vacío            | Requerido con bootstrap; entre 12 y 256 caracteres.    |
+| `AUTH_ACCESS_SECRET`              | requerido        | Firma HMAC del access token; mínimo 32 caracteres.     |
+| `AUTH_REFRESH_SECRET`             | requerido        | Firma HMAC del refresh token; mínimo 32 caracteres.    |
+| `CSRF_SECRET`                     | requerido        | Firma y binding de CSRF; mínimo 32 caracteres.         |
+| `WEBSOCKET_TICKET_SECRET`         | requerido        | Firma de tickets WebSocket de un solo uso.             |
+| `CORS_ORIGINS`                    | `*`              | Allowlist separada por comas; producción la restringe. |
+| `COOKIE_SECURE`                   | `false`          | Agrega `Secure` a las cookies.                         |
+| `ACCESS_TOKEN_TTL_SECONDS`        | `900`            | Vida del access token.                                 |
+| `REFRESH_TOKEN_TTL_SECONDS`       | `604800`         | Vida del refresh token.                                |
+| `AGENT_INTERNAL_URL`              | `127.0.0.1:4100` | URL privada de `apps/agent`.                           |
+| `ALLOW_PUBLIC_AGENT_URL`          | `false`          | Override explícito para una URL no privada.            |
+| `AGENT_SERVICE_TOKEN`             | requerido        | Token compartido API → agente; mínimo 32 caracteres.   |
+| `TRUSTED_PROXIES`                 | vacío            | IPs exactas autorizadas a aportar `X-Forwarded-For`.   |
+| `RATE_LIMIT_ENABLED`              | `true`           | Activa el rate limit local del proceso.                |
+| `RATE_LIMIT_WINDOW_SECONDS`       | `60`             | Ventana de rate limit.                                 |
+| `RATE_LIMIT_REQUESTS`             | `120`            | Límite HTTP general por origen.                        |
+| `RATE_LIMIT_LOGIN_REQUESTS`       | `10`             | Límite específico de login.                            |
+| `RATE_LIMIT_AGENT_REQUESTS`       | `20`             | Límite por tenant y actor para crear runs.             |
+| `API_TEST_ENABLED`                | `false`          | Habilita integración contra la base configurada.       |
+| `API_TEST_SEEDS`                  | `false`          | Habilita el paso explícito de seeds.                   |
+| `TEST_TENANT_ID`                  | vacío            | Tenant existente autorizado para tests.                |
 
 El rate limiter actual vive en memoria y limita cada proceso por separado. No
-debe documentarse como un límite distribuido.
+debe documentarse como un límite distribuido. Responde headers
+`RateLimit-Limit`, `RateLimit-Remaining` y `RateLimit-Reset`; una respuesta 429
+agrega `Retry-After`.
+
+En `production` la configuración falla si CORS contiene wildcard/dominios
+placeholder, las cookies no son seguras, se habilitan flags de test, se apaga
+el rate limit, se reutilizan secretos, quedan placeholders o la URL del agente
+es pública sin override. El override debe ser una decisión deliberada del
+despliegue, no un default del template.
 
 ## Módulos
 
@@ -207,11 +219,22 @@ anterior; no asumir esas propiedades al extender autenticación.
 CSRF combina `Bun.CSRF` con un HMAC ligado al `sid`. Toda mutación autenticada
 debe llamar `authenticatedRequest(request, { csrf: true })`.
 
+`authenticatedRequest` revalida la identidad y el tenant en MongoDB y reconstruye
+el rol actual antes de cada decisión. Usuarios u operadores inactivos, tenants
+inactivos y roles modificados no conservan acceso sólo porque el token todavía
+sea criptográficamente válido.
+
 La autorización se aplica en el servidor:
 
 - `requirePlatformAdministrator`;
 - `requireTenantAccess`;
 - `requireTenantManager`.
+
+Para runs, conversaciones, eventos, confirmations, uploads y artifacts,
+`tenant_user` y `tenant_operator` sólo acceden a recursos cuyo owner es su actor
+actual. `tenant_owner` y `platform_admin` pueden operar recursos del tenant que
+la API ya resolvió y firmó. Las denegaciones por recurso responden 404 para no
+revelar existencia.
 
 Ocultar una pantalla o enlace en Next.js nunca reemplaza estas verificaciones.
 
@@ -227,7 +250,8 @@ Flujo:
 
 1. El cliente autenticado solicita `POST /auth/ws-tickets/create` con CSRF.
 2. La API persiste el hash del ticket en `websocket_tickets`.
-3. El upgrade consume el ticket de forma atómica; vence a los 60 segundos.
+3. El upgrade consume el ticket de forma atómica, revalida actor/tenant/rol y
+   vence a los 60 segundos.
 4. El cliente se suscribe a `agent:run:<uuid>`.
 5. La API verifica el run contra el runtime del agente.
 6. El bridge hace replay desde el cursor durable y publica eventos del tenant.
@@ -283,9 +307,10 @@ la API responde conflicto en lugar de sobrescribirlo silenciosamente.
 
 - bearer token interno;
 - timestamp con ventana de 30 segundos;
-- HMAC de timestamp, método, path, query y body;
+- HMAC de timestamp, método, path, query, tenant, actor, rol y body;
 - `x-tenant-id`;
 - `x-actor-id`;
+- `x-actor-role`;
 - idempotency key cuando corresponde.
 
 La URL del agente nunca debe exponerse al navegador ni a Nginx. El proxy
@@ -310,8 +335,10 @@ No implementar DDD, arquitectura hexagonal, CQRS ni capas sin uso concreto.
 
 ## Administrador inicial
 
-`DEFAULT_ADMIN_EMAIL` y `DEFAULT_ADMIN_PASSWORD` son obligatorios. Después de
-asegurar el índice único de email, cada arranque consulta el email normalizado:
+El bootstrap está apagado por defecto. Con
+`DEFAULT_ADMIN_BOOTSTRAP_ENABLED=true`, email y password se vuelven obligatorios
+y, después de asegurar el índice único, cada arranque consulta el email
+normalizado:
 
 - si no existe, crea un `platform_admin` activo con nombre
   `Administrador principal`;
@@ -364,8 +391,10 @@ Para un cambio de API, validar como mínimo:
 
 ## Nginx
 
-`nginx/api.example.com` apunta a `127.0.0.1:3822`, incluye upgrade WebSocket y
-puede copiarse como virtual host independiente a un servidor Nginx compartido.
+`nginx/api.example.com` apunta a `127.0.0.1:3822`, reemplaza
+`X-Forwarded-For` con `$remote_addr`, incluye upgrade WebSocket y puede copiarse
+como virtual host independiente a un servidor Nginx compartido. Esa IP de Nginx
+debe figurar en `TRUSTED_PROXIES`.
 
 Si se modifica `API_PORT`, `/ws`, límites de body, headers o timeouts, se debe
 actualizar ese archivo en la misma tarea.

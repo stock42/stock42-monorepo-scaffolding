@@ -79,7 +79,9 @@ No agregar un proxy catch-all. Cada operación debe tener su archivo
 sesión o el actor no es `kind=user`, redirige a `/login`.
 
 La protección de Next es una barrera de UX. La API vuelve a autenticar y
-autorizar cada operación.
+autorizar cada operación. `/auth/me`, los requests autenticados y el consumo del
+ticket WebSocket revalidan que usuario y tenant sigan activos y reconstruyen el
+rol actual desde MongoDB.
 
 ## Login y sesión
 
@@ -122,7 +124,9 @@ cookies de la request actual y consulta `/auth/me` mediante
 | `POST` | `/api/agent/runs/[id]/cancel` | Solicita cancelación.  |
 
 El tenant no se envía desde la UI de usuarios. La API lo deriva de la sesión
-`tenant_user`.
+`tenant_user`. Runs, eventos, cancelaciones, uploads y artifacts quedan además
+filtrados por el UUID del actor; conocer un UUID de otro usuario del mismo
+tenant no concede acceso.
 
 ### Archivos
 

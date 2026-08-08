@@ -5,6 +5,7 @@ import {
   type AgentRunStatus,
   type InternalRunEnvelope,
 } from "@stock42/contracts/agent";
+import type { ActorRole } from "@stock42/contracts/auth";
 import {
   TELEGRAM_AI_ACCESS_COLLECTION,
   TelegramAiAccessSchema,
@@ -18,7 +19,9 @@ import type {
   ProcessDocument,
   RunDocument,
   RunEventDocument,
+  ToolExecutionDocument,
 } from "../contracts/types";
+import { canAccessOwnedResource, ownerFilter, type ResourceActor } from "../authorization";
 import { terminalStatuses } from "../contracts/types";
 
 type ConversationDocument = {
@@ -103,7 +106,15 @@ const activeStatuses: AgentRunStatus[] = ["starting", "running", "cancel_request
 
 const transitions: Record<AgentRunStatus, AgentRunStatus[]> = {
   queued: ["starting", "cancelled"],
-  starting: ["running", "cancel_requested", "failed", "cancelled", "crashed"],
+  starting: [
+    "running",
+    "cancel_requested",
+    "failed",
+    "cancelled",
+    "timed_out",
+    "killed",
+    "crashed",
+  ],
   running: [
     "waiting",
     "cancel_requested",
@@ -130,6 +141,20 @@ function withoutMongoId<T>(document: WithId<T> | T): T {
   return value as unknown as T;
 }
 
+export class AgentResourceNotFoundError extends Error {
+  constructor() {
+    super("Agent resource not found");
+    this.name = "AgentResourceNotFoundError";
+  }
+}
+
+export class AgentAttemptInactiveError extends Error {
+  constructor() {
+    super("Agent attempt is no longer active");
+    this.name = "AgentAttemptInactiveError";
+  }
+}
+
 export class AgentStore {
   private readonly client: MongoClient;
   private db: Db | null = null;
@@ -150,17 +175,20 @@ export class AgentStore {
   }
 
   async ensureIndexes(): Promise<void> {
+    await this.migrateLegacyRunIdempotencyIndex();
     await Promise.all([
       this.runs.createIndex(
-        { tenantId: 1, idempotencyKey: 1 },
-        { unique: true, name: "runs_tenant_idempotency_unique" },
+        { tenantId: 1, actorId: 1, idempotencyKey: 1 },
+        { unique: true, name: "runs_tenant_actor_idempotency_unique" },
       ),
+      this.runs.createIndex({ uuid: 1 }, { unique: true, name: "runs_uuid_unique" }),
       this.runs.createIndex({ status: 1, createdAt: 1 }, { name: "runs_claim_queue" }),
       this.runs.createIndex({ tenantId: 1, status: 1 }, { name: "runs_tenant_status" }),
       this.runs.createIndex(
         { status: 1, heartbeatAt: 1, deadlineAt: 1 },
         { name: "runs_supervision" },
       ),
+      this.runs.createIndex({ status: 1, updatedAt: 1 }, { name: "runs_supervision_queue" }),
       this.runs.createIndex(
         { telegramDeliveryStatus: 1, status: 1, updatedAt: -1 },
         { name: "runs_telegram_delivery" },
@@ -177,13 +205,26 @@ export class AgentStore {
         { conversationId: 1, createdAt: 1 },
         { name: "messages_conversation_created" },
       ),
+      this.conversations.createIndex(
+        { tenantId: 1, uuid: 1 },
+        { unique: true, name: "conversations_tenant_uuid_unique" },
+      ),
       this.confirmations.createIndex(
         { uuid: 1 },
         { unique: true, name: "confirmations_uuid_unique" },
       ),
       this.confirmations.createIndex({ runId: 1, status: 1 }, { name: "confirmations_run_status" }),
       this.confirmations.createIndex({ expiresAt: 1 }, { name: "confirmations_expiry" }),
+      this.toolExecutions.createIndex(
+        { runId: 1, toolCallId: 1, inputHash: 1 },
+        { unique: true, name: "tool_executions_run_call_input_unique" },
+      ),
+      this.toolExecutions.createIndex(
+        { uuid: 1 },
+        { unique: true, name: "tool_executions_uuid_unique" },
+      ),
       this.processes.createIndex({ runId: 1, startedAt: -1 }, { name: "processes_run_started" }),
+      this.processes.createIndex({ uuid: 1 }, { unique: true, name: "processes_uuid_unique" }),
       this.uploads.createIndex({ uuid: 1 }, { unique: true, name: "uploads_uuid_unique" }),
       this.uploads.createIndex(
         { tenantId: 1, ownerId: 1, createdAt: -1 },
@@ -198,6 +239,7 @@ export class AgentStore {
         { tenantId: 1, idempotencyKey: 1 },
         { unique: true, name: "deliveries_tenant_idempotency_unique" },
       ),
+      this.deliveries.createIndex({ uuid: 1 }, { unique: true, name: "deliveries_uuid_unique" }),
       this.telegramSessions.createIndex(
         { transport: 1, tenantId: 1, externalChatId: 1 },
         { unique: true, name: "telegram_sessions_tenant_chat_unique" },
@@ -212,12 +254,30 @@ export class AgentStore {
   async enqueue(envelope: InternalRunEnvelope): Promise<AgentRun> {
     const existing = await this.runs.findOne({
       tenantId: envelope.tenantId,
+      actorId: envelope.actorId,
       idempotencyKey: envelope.request.idempotencyKey,
     });
     if (existing) return this.toPublicRun(existing);
 
     const now = new Date();
     const conversationId = envelope.request.conversationId ?? crypto.randomUUID();
+    let conversationOwnerId = envelope.actorId;
+    if (envelope.request.conversationId) {
+      const conversation = await this.conversations.findOne({
+        uuid: conversationId,
+        tenantId: envelope.tenantId,
+      });
+      if (
+        conversation &&
+        !canAccessOwnedResource(conversation.actorId, {
+          actorId: envelope.actorId,
+          actorRole: envelope.actorRole,
+        })
+      ) {
+        throw new AgentResourceNotFoundError();
+      }
+      if (conversation) conversationOwnerId = conversation.actorId;
+    }
     const run: RunDocument = {
       uuid: crypto.randomUUID(),
       tenantId: envelope.tenantId,
@@ -257,6 +317,7 @@ export class AgentStore {
       if (cause instanceof MongoServerError && cause.code === 11_000) {
         const raced = await this.runs.findOne({
           tenantId: envelope.tenantId,
+          actorId: envelope.actorId,
           idempotencyKey: envelope.request.idempotencyKey,
         });
         if (raced) return this.toPublicRun(raced);
@@ -264,20 +325,28 @@ export class AgentStore {
       throw cause;
     }
 
-    await this.conversations.updateOne(
-      { uuid: conversationId, tenantId: envelope.tenantId },
-      {
-        $setOnInsert: {
-          uuid: conversationId,
-          tenantId: envelope.tenantId,
-          actorId: envelope.actorId,
-          title: envelope.request.task.slice(0, 120),
-          createdAt: now.toISOString(),
+    try {
+      await this.conversations.updateOne(
+        { uuid: conversationId, tenantId: envelope.tenantId, actorId: conversationOwnerId },
+        {
+          $setOnInsert: {
+            uuid: conversationId,
+            tenantId: envelope.tenantId,
+            actorId: conversationOwnerId,
+            title: envelope.request.task.slice(0, 120),
+            createdAt: now.toISOString(),
+          },
+          $set: { updatedAt: now.toISOString() },
         },
-        $set: { updatedAt: now.toISOString() },
-      },
-      { upsert: true },
-    );
+        { upsert: true },
+      );
+    } catch (cause) {
+      await this.runs.deleteOne({ uuid: run.uuid, status: "queued", eventSequence: 0 });
+      if (cause instanceof MongoServerError && cause.code === 11_000) {
+        throw new AgentResourceNotFoundError();
+      }
+      throw cause;
+    }
     await this.addMessage({
       uuid: crypto.randomUUID(),
       conversationId,
@@ -302,7 +371,21 @@ export class AgentStore {
     });
   }
 
-  async listEvents(runId: string, tenantId: string, cursor: number) {
+  async getRunForActor(
+    runId: string,
+    tenantId: string,
+    actor: ResourceActor,
+  ): Promise<RunDocument | null> {
+    return this.runs.findOne({
+      uuid: runId,
+      tenantId,
+      ...ownerFilter("actorId", actor),
+    });
+  }
+
+  async listEvents(runId: string, tenantId: string, actor: ResourceActor, cursor: number) {
+    const run = await this.getRunForActor(runId, tenantId, actor);
+    if (!run) return null;
     const events = await this.events
       .find({ runId, tenantId, sequence: { $gt: cursor } })
       .sort({ sequence: 1 })
@@ -426,10 +509,14 @@ export class AgentStore {
     await this.appendEvent(runId, "run.status", { status: "running" });
   }
 
-  async heartbeat(runId: string, progress = false): Promise<void> {
+  async heartbeat(runId: string, processId: string, progress = false): Promise<void> {
     const now = new Date().toISOString();
-    await this.runs.updateOne(
-      { uuid: runId, status: { $in: ["starting", "running", "cancel_requested"] } },
+    const result = await this.runs.updateOne(
+      {
+        uuid: runId,
+        processId,
+        status: { $in: ["starting", "running", "cancel_requested"] },
+      },
       {
         $set: {
           heartbeatAt: now,
@@ -438,14 +525,28 @@ export class AgentStore {
         },
       },
     );
+    if (!result.matchedCount) throw new AgentAttemptInactiveError();
+  }
+
+  async assertActiveAttempt(runId: string, processId: string): Promise<void> {
+    const active = await this.runs.findOne(
+      { uuid: runId, processId, status: "running", terminationRequestedAt: null },
+      { projection: { _id: 1 } },
+    );
+    if (!active) throw new AgentAttemptInactiveError();
   }
 
   async transition(
     runId: string,
     status: AgentRunStatus,
     updates: Partial<RunDocument> = {},
+    expectedProcessId?: string,
   ): Promise<RunDocument> {
-    const current = await this.runs.findOne({ uuid: runId });
+    const current = await this.runs.findOne({
+      uuid: runId,
+      ...(expectedProcessId ? { processId: expectedProcessId } : {}),
+    });
+    if (!current && expectedProcessId) throw new AgentAttemptInactiveError();
     if (!current) throw new Error(`Run no encontrado: ${runId}`);
     if (current.status === status) return current;
     if (!transitions[current.status].includes(status)) {
@@ -454,7 +555,11 @@ export class AgentStore {
     const now = new Date().toISOString();
     const terminal = terminalStatuses.has(status);
     const updated = await this.runs.findOneAndUpdate(
-      { uuid: runId, status: current.status },
+      {
+        uuid: runId,
+        status: current.status,
+        ...(expectedProcessId ? { processId: expectedProcessId } : {}),
+      },
       {
         $set: {
           ...updates,
@@ -465,7 +570,10 @@ export class AgentStore {
       },
       { returnDocument: "after" },
     );
-    if (!updated) return this.transition(runId, status, updates);
+    if (!updated) {
+      if (expectedProcessId) throw new AgentAttemptInactiveError();
+      return this.transition(runId, status, updates);
+    }
     await this.appendEvent(runId, "run.status", {
       status,
       ...(updated.terminalReason ? { reason: updated.terminalReason } : {}),
@@ -473,8 +581,12 @@ export class AgentStore {
     return updated;
   }
 
-  async requestCancellation(runId: string, tenantId: string): Promise<RunDocument | null> {
-    const run = await this.runs.findOne({ uuid: runId, tenantId });
+  async requestCancellation(
+    runId: string,
+    tenantId: string,
+    actor: ResourceActor,
+  ): Promise<RunDocument | null> {
+    const run = await this.getRunForActor(runId, tenantId, actor);
     if (!run) return null;
     if (terminalStatuses.has(run.status)) return run;
     if (run.status === "queued" || run.status === "waiting") {
@@ -497,10 +609,11 @@ export class AgentStore {
       .toArray();
   }
 
-  async noteTerminationRequested(runId: string, reason: string): Promise<void> {
-    await this.runs.updateOne(
+  async noteTerminationRequested(runId: string, processId: string, reason: string): Promise<void> {
+    const result = await this.runs.updateOne(
       {
         uuid: runId,
+        processId,
         status: { $in: activeStatuses },
         terminationRequestedAt: null,
       },
@@ -511,6 +624,32 @@ export class AgentStore {
           updatedAt: new Date().toISOString(),
         },
       },
+    );
+    if (!result.matchedCount) throw new AgentAttemptInactiveError();
+  }
+
+  async noteForcedTermination(runId: string, processId: string, reason: string): Promise<void> {
+    const result = await this.runs.updateOne(
+      { uuid: runId, processId, status: { $in: activeStatuses } },
+      { $set: { terminalReason: reason, updatedAt: new Date().toISOString() } },
+    );
+    if (!result.matchedCount) throw new AgentAttemptInactiveError();
+  }
+
+  async processOwnsRun(run: RunDocument): Promise<boolean> {
+    if (!run.processId || !run.pid) return false;
+    const processDocument = await this.processes.findOne({
+      uuid: run.processId,
+      runId: run.uuid,
+      pid: run.pid,
+      status: { $in: ["starting", "running"] },
+    });
+    if (!processDocument) return false;
+    return Boolean(
+      await this.runs.findOne(
+        { uuid: run.uuid, processId: run.processId, pid: run.pid },
+        { projection: { _id: 1 } },
+      ),
     );
   }
 
@@ -587,14 +726,106 @@ export class AgentStore {
       confirmationId: confirmation.uuid,
       toolName: confirmation.toolName,
       expiresAt: confirmation.expiresAt,
+      ...(confirmation.preview ? { preview: confirmation.preview } : {}),
     });
     return confirmation;
+  }
+
+  async beginToolExecution(input: {
+    run: RunDocument;
+    processId: string;
+    toolCallId: string;
+    toolName: string;
+    inputHash: string;
+    idempotent: boolean;
+  }): Promise<
+    { kind: "execute"; execution: ToolExecutionDocument } | { kind: "cached"; output: unknown }
+  > {
+    await this.assertActiveAttempt(input.run.uuid, input.processId);
+    const key = {
+      runId: input.run.uuid,
+      toolCallId: input.toolCallId,
+      inputHash: input.inputHash,
+    };
+    let existing = await this.toolExecutions.findOne(key);
+    if (!existing) {
+      const now = new Date().toISOString();
+      const execution: ToolExecutionDocument = {
+        uuid: crypto.randomUUID(),
+        ...key,
+        tenantId: input.run.tenantId,
+        toolName: input.toolName,
+        processId: input.processId,
+        status: "running",
+        output: null,
+        error: null,
+        attempts: 1,
+        createdAt: now,
+        updatedAt: now,
+        completedAt: null,
+      };
+      try {
+        await this.toolExecutions.insertOne(execution);
+        return { kind: "execute", execution };
+      } catch (cause) {
+        if (!(cause instanceof MongoServerError && cause.code === 11_000)) throw cause;
+        existing = await this.toolExecutions.findOne(key);
+      }
+    }
+    if (!existing) throw new Error("No fue posible reclamar la ejecución de la tool.");
+    if (existing.status === "succeeded") return { kind: "cached", output: existing.output };
+    if (!input.idempotent) {
+      throw new Error("La tool no idempotente requiere reconciliación manual antes de reintentar.");
+    }
+    const now = new Date().toISOString();
+    const reclaimed = await this.toolExecutions.findOneAndUpdate(
+      { ...key, status: existing.status, processId: existing.processId },
+      {
+        $set: {
+          processId: input.processId,
+          status: "running",
+          output: null,
+          error: null,
+          updatedAt: now,
+          completedAt: null,
+        },
+        $inc: { attempts: 1 },
+      },
+      { returnDocument: "after" },
+    );
+    if (!reclaimed) throw new AgentAttemptInactiveError();
+    return { kind: "execute", execution: reclaimed };
+  }
+
+  async completeToolExecution(uuid: string, processId: string, output: unknown): Promise<void> {
+    const now = new Date().toISOString();
+    const result = await this.toolExecutions.updateOne(
+      { uuid, processId, status: "running" },
+      { $set: { status: "succeeded", output, error: null, updatedAt: now, completedAt: now } },
+    );
+    if (!result.matchedCount) throw new AgentAttemptInactiveError();
+  }
+
+  async failToolExecution(uuid: string, processId: string, cause: unknown): Promise<void> {
+    const now = new Date().toISOString();
+    await this.toolExecutions.updateOne(
+      { uuid, processId, status: "running" },
+      {
+        $set: {
+          status: "failed",
+          error: cause instanceof Error ? cause.message.slice(0, 240) : "tool_failed",
+          updatedAt: now,
+          completedAt: now,
+        },
+      },
+    );
   }
 
   async resolveConfirmation(
     uuid: string,
     tenantId: string,
     actorId: string,
+    actorRole: ActorRole,
     decision: "approved" | "rejected",
   ): Promise<RunDocument | null> {
     const now = new Date().toISOString();
@@ -604,6 +835,7 @@ export class AgentStore {
         tenantId,
         status: "pending",
         expiresAt: { $gt: now },
+        ...ownerFilter("actorId", { actorId, actorRole }),
       },
       {
         $set: {
@@ -653,7 +885,20 @@ export class AgentStore {
       telegramUserId,
       status: "active",
     });
-    if (!document) return null;
+    return document ? this.validateActiveTelegramAccess(document) : null;
+  }
+
+  async findActiveTelegramDestination(
+    uuid: string,
+    tenantId: string,
+  ): Promise<TelegramAiAccess | null> {
+    const document = await this.telegramAccess.findOne({ uuid, tenantId, status: "active" });
+    return document ? this.validateActiveTelegramAccess(document) : null;
+  }
+
+  private async validateActiveTelegramAccess(
+    document: TelegramAiAccess,
+  ): Promise<TelegramAiAccess | null> {
     const access = TelegramAiAccessSchema.parse(withoutMongoId(document));
     const tenant = await this.database.collection("tenants").findOne({
       uuid: access.tenantId,
@@ -826,6 +1071,10 @@ export class AgentStore {
     return this.database.collection("agent_processes");
   }
 
+  private get toolExecutions(): Collection<ToolExecutionDocument> {
+    return this.database.collection("agent_tool_executions");
+  }
+
   private get uploads(): Collection<UploadDocument> {
     return this.database.collection("agent_uploads");
   }
@@ -872,5 +1121,25 @@ export class AgentStore {
       },
       { upsert: true },
     );
+  }
+
+  private async migrateLegacyRunIdempotencyIndex(): Promise<void> {
+    let indexes: Array<{ name?: string }>;
+    try {
+      indexes = await this.runs.listIndexes().toArray();
+    } catch (cause) {
+      if (cause instanceof MongoServerError && cause.code === 26) return;
+      throw cause;
+    }
+    if (!indexes.some((index) => index.name === "runs_tenant_idempotency_unique")) return;
+    await this.runs.createIndex(
+      { tenantId: 1, actorId: 1, idempotencyKey: 1 },
+      { unique: true, name: "runs_tenant_actor_idempotency_unique" },
+    );
+    try {
+      await this.runs.dropIndex("runs_tenant_idempotency_unique");
+    } catch (cause) {
+      if (!(cause instanceof MongoServerError && cause.code === 27)) throw cause;
+    }
   }
 }

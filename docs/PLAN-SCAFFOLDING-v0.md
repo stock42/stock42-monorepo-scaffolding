@@ -1159,8 +1159,8 @@ La integración inicial contempla:
 - recepción mediante `getUpdates`;
 - offset durable confirmado con `update_id + 1`;
 - CRUD backoffice de IDs autorizados por tenant y actor;
-- entrega idempotente;
-- reintentos acotados;
+- ledger durable por entrega;
+- sin reenvío automático cuando el outcome de `sendMessage` es incierto;
 - registro del identificador externo;
 - redacción de token en logs;
 - clasificación write o critical según el destino y contenido.
@@ -1798,7 +1798,8 @@ Criterios de aceptación:
 - ninguna tool permite queries Mongo arbitrarias;
 - una acción critical no ejecuta antes de aprobación;
 - aprobar no cambia argumentos;
-- Telegram es idempotente;
+- Telegram reutiliza resultados confirmados y exige reconciliación manual ante
+  un outcome incierto;
 - `getUpdates` solo acepta IDs activos administrados en `Telegram AI`;
 - el agente del backoffice funciona por HTTP con tenant explícito;
 - artifacts no están en base64 en Mongo;

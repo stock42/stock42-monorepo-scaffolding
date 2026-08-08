@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import type { AgentConfig } from "@/config";
 import type { AgentStore, ArtifactDocument } from "@/runtime/store/AgentStore";
+import { ownerFilter, type ResourceActor } from "@/runtime/authorization";
 
 const mimeExtensions: Record<string, string> = {
   "application/pdf": ".pdf",
@@ -66,11 +67,16 @@ export class ArtifactService {
   async get(
     uuid: string,
     tenantId: string,
+    actor: ResourceActor,
   ): Promise<{
     artifact: ArtifactDocument;
     file: ReturnType<typeof Bun.file>;
   } | null> {
-    const artifact = await this.store.artifactsCollection.findOne({ uuid, tenantId });
+    const artifact = await this.store.artifactsCollection.findOne({
+      uuid,
+      tenantId,
+      ...ownerFilter("ownerId", actor),
+    });
     if (!artifact) return null;
     return { artifact, file: Bun.file(this.safePath(artifact.storageName)) };
   }
