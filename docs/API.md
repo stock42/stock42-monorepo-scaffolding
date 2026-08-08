@@ -130,6 +130,17 @@ bases de test implícitas.
 | `RATE_LIMIT_REQUESTS`             | `120`            | Límite HTTP general por origen.                        |
 | `RATE_LIMIT_LOGIN_REQUESTS`       | `10`             | Límite específico de login.                            |
 | `RATE_LIMIT_AGENT_REQUESTS`       | `20`             | Límite por tenant y actor para crear runs.             |
+| `EMAIL_SPOOLER_ENABLED`           | `false`          | Opt-in del worker persistente de campañas.             |
+| `SMTP_HOST`                       | vacío            | Host SMTP; requerido si el worker está activo.         |
+| `SMTP_PORT`                       | `587`            | Puerto SMTP.                                           |
+| `SMTP_SECURE`                     | `false`          | Conexión SMTP TLS implícita.                           |
+| `SMTP_USER`                       | vacío            | Usuario SMTP server-only.                              |
+| `SMTP_PASS`                       | vacío            | Password SMTP server-only.                             |
+| `MAIL_FROM`                       | vacío            | Remitente fijado por servidor para toda campaña.       |
+| `EMAIL_SPOOLER_INTERVAL_MS`       | `60000`          | Frecuencia de revisión de la cola.                     |
+| `EMAIL_SPOOLER_BATCH_SIZE`        | `25`             | Entradas reclamadas por ciclo, máximo efectivo 100.    |
+| `EMAIL_SPOOLER_MAX_ATTEMPTS`      | `3`              | Intentos antes del estado terminal `failed`.           |
+| `EMAIL_SPOOLER_LEASE_MS`          | `300000`         | Lease para recuperar procesos interrumpidos.           |
 | `API_TEST_ENABLED`                | `false`          | Habilita integración contra la base configurada.       |
 | `API_TEST_SEEDS`                  | `false`          | Habilita el paso explícito de seeds.                   |
 | `TEST_TENANT_ID`                  | vacío            | Tenant existente autorizado para tests.                |
@@ -154,17 +165,18 @@ confiar en `Host` o headers de proxy enviados por el cliente.
 Cada módulo vive en `src/modules/<capacidad>`, tiene un `__module__.ts` válido y
 usa nombres sin prefijo de producto.
 
-| Módulo           | Responsabilidad                                               |
-| ---------------- | ------------------------------------------------------------- |
-| `health`         | Liveness y readiness.                                         |
-| `auth`           | Login, refresh, logout, sesión, CSRF y tickets WebSocket.     |
-| `administrators` | Alta de administradores de plataforma.                        |
-| `tenants`        | Alta, listado, consulta y estado de tenants.                  |
-| `operators`      | Alta y listado de owners/operadores dentro de un tenant.      |
-| `users`          | Alta y listado de usuarios finales dentro de un tenant.       |
-| `telegram-ai`    | CRUD de IDs autorizados para la interfaz Telegram del agente. |
-| `agent`          | Frontera pública tenant-aware hacia el runtime privado.       |
-| `files`          | Intents, contenido binario y descarga de artifacts.           |
+| Módulo            | Responsabilidad                                               |
+| ----------------- | ------------------------------------------------------------- |
+| `health`          | Liveness y readiness.                                         |
+| `auth`            | Login, refresh, logout, sesión, CSRF y tickets WebSocket.     |
+| `administrators`  | Alta de administradores de plataforma.                        |
+| `tenants`         | Alta, listado, consulta y estado de tenants.                  |
+| `operators`       | Alta y listado de owners/operadores dentro de un tenant.      |
+| `users`           | Alta y listado de usuarios finales dentro de un tenant.       |
+| `telegram-ai`     | CRUD de IDs autorizados para la interfaz Telegram del agente. |
+| `email-marketing` | Grupos, plantillas, campañas y spooler SMTP tenant-aware.     |
+| `agent`           | Frontera pública tenant-aware hacia el runtime privado.       |
+| `files`           | Intents, contenido binario y descarga de artifacts.           |
 
 ### Rutas HTTP
 
@@ -191,6 +203,22 @@ usa nombres sin prefijo de producto.
 | `POST`   | `/telegram-ai/access/create`       | Manager del tenant y CSRF.                   |
 | `PATCH`  | `/telegram-ai/access/:id/update`   | Manager del tenant, versión esperada y CSRF. |
 | `DELETE` | `/telegram-ai/access/:id`          | Manager del tenant, versión esperada y CSRF. |
+| `GET`    | `/user-groups`                     | Manager del tenant indicado.                 |
+| `POST`   | `/user-groups/create`              | Manager del tenant y CSRF.                   |
+| `PATCH`  | `/user-groups/:id/update`          | Manager, versión esperada y CSRF.            |
+| `GET`    | `/user-groups/:id/members`         | Manager del tenant indicado.                 |
+| `POST`   | `/user-groups/:id/members/add`     | Manager del tenant y CSRF.                   |
+| `DELETE` | `/user-groups/:id/members/:userId` | Manager del tenant y CSRF.                   |
+| `GET`    | `/email-templates`                 | Manager del tenant indicado.                 |
+| `POST`   | `/email-templates/create`          | Manager del tenant y CSRF.                   |
+| `PATCH`  | `/email-templates/:id/update`      | Manager, versión esperada y CSRF.            |
+| `GET`    | `/email-campaigns`                 | Manager del tenant indicado.                 |
+| `POST`   | `/email-campaigns/create`          | Manager, idempotency key y CSRF.             |
+| `POST`   | `/email-campaigns/:id/stop`        | Manager del tenant y CSRF.                   |
+| `GET`    | `/email-spooler`                   | Manager del tenant indicado.                 |
+| `GET`    | `/email-spooler/health`            | Manager; métricas limitadas al tenant.       |
+| `POST`   | `/email-spooler/:id/send-now`      | Manager del tenant y CSRF.                   |
+| `POST`   | `/email-spooler/:id/stop`          | Manager del tenant y CSRF.                   |
 | `POST`   | `/agent/runs/create`               | Sesión, tenant válido, CSRF y rate limit.    |
 | `GET`    | `/agent/runs/:id`                  | Actor autorizado para el tenant.             |
 | `GET`    | `/agent/runs/:id/events`           | Actor autorizado; cursor durable.            |
@@ -203,6 +231,26 @@ usa nombres sin prefijo de producto.
 
 Las rutas son explícitas. No agregar controllers catch-all ni proxies
 genéricos.
+
+### Email marketing
+
+El módulo usa cinco colecciones planas con índices propios:
+`user_groups`, `user_group_members`, `email_templates`, `email_campaigns` y
+`email_spooler`. Sólo `platform_admin` y `tenant_owner` pueden operar la
+capacidad y toda consulta vuelve a fijar `tenantId` en servidor.
+
+Las campañas requieren grupo y plantilla activos, un `MAIL_FROM` válido y una
+clave de idempotencia. La API resuelve como máximo 5.000 miembros, descarta
+usuarios inactivos y persiste una copia de destinatario, asunto y cuerpo por
+usuario. Si el alta del lote falla, elimina las entradas parciales y deja la
+campaña en `failed`.
+
+El worker sólo arranca con `EMAIL_SPOOLER_ENABLED=true` y configuración SMTP
+completa. Reclama entradas mediante `findOneAndUpdate`, asigna lease, reintenta
+con backoff y nunca marca `sent` antes de la confirmación del transporte. Stop
+de campaña cambia primero el estado de la campaña y luego detiene entradas
+pendientes; un worker que observe una campaña terminal libera su lease como
+`stopped`.
 
 ## Autenticación y autorización
 
@@ -395,7 +443,8 @@ bun run test:api
 
 `test:api` es opt-in y usa exclusivamente `MONGODB_URI` y `MONGODB_DB`
 configurados. Nunca debe crear otra base, usar Mongo en memoria ni ejecutar
-`dropDatabase`.
+`dropDatabase`. El flujo cubre alta de grupo y plantilla, encolado idempotente,
+consulta tenant-scoped y detención de una campaña sin habilitar entrega SMTP.
 
 Para un cambio de API, validar como mínimo:
 

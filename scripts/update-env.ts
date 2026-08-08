@@ -46,6 +46,7 @@ const scenarioControlledKeys = new Set([
   "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
   "ALLOW_PUBLIC_AGENT_URL",
   "ALLOW_PUBLIC_AGENT_BIND",
+  "EMAIL_SPOOLER_ENABLED",
 ]);
 const secretKeys = new Set([
   "MONGODB_URI",
@@ -57,6 +58,7 @@ const secretKeys = new Set([
   "WEBSOCKET_TICKET_SECRET",
   "DEEPSEEK_API_KEY",
   "TELEGRAM_BOT_TOKEN",
+  "SMTP_PASS",
 ]);
 const generatedSecretKeys = new Set([
   "AGENT_SERVICE_TOKEN",
@@ -72,6 +74,10 @@ const optionalKeys = new Set([
   "TEST_TENANT_ID",
   "TELEGRAM_BOT_TOKEN",
   "TRUSTED_PROXIES",
+  "SMTP_HOST",
+  "SMTP_USER",
+  "SMTP_PASS",
+  "MAIL_FROM",
 ]);
 const booleanKeys = new Set([
   "COOKIE_SECURE",
@@ -82,6 +88,8 @@ const booleanKeys = new Set([
   "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
   "ALLOW_PUBLIC_AGENT_URL",
   "ALLOW_PUBLIC_AGENT_BIND",
+  "EMAIL_SPOOLER_ENABLED",
+  "SMTP_SECURE",
 ]);
 const integerKeys = new Set([
   "API_PORT",
@@ -107,6 +115,11 @@ const integerKeys = new Set([
   "TELEGRAM_POLL_BACKOFF_MIN_MS",
   "TELEGRAM_POLL_BACKOFF_MAX_MS",
   "TELEGRAM_DELIVERY_INTERVAL_MS",
+  "SMTP_PORT",
+  "EMAIL_SPOOLER_INTERVAL_MS",
+  "EMAIL_SPOOLER_BATCH_SIZE",
+  "EMAIL_SPOOLER_MAX_ATTEMPTS",
+  "EMAIL_SPOOLER_LEASE_MS",
 ]);
 const httpUrlKeys = new Set([
   "API_INTERNAL_URL",
@@ -161,6 +174,17 @@ export function buildScenarioDefaults(
       RATE_LIMIT_REQUESTS: "120",
       RATE_LIMIT_LOGIN_REQUESTS: "10",
       RATE_LIMIT_AGENT_REQUESTS: "20",
+      EMAIL_SPOOLER_ENABLED: "false",
+      SMTP_HOST: "",
+      SMTP_PORT: "587",
+      SMTP_SECURE: "false",
+      SMTP_USER: "",
+      SMTP_PASS: "",
+      MAIL_FROM: "",
+      EMAIL_SPOOLER_INTERVAL_MS: "60000",
+      EMAIL_SPOOLER_BATCH_SIZE: "25",
+      EMAIL_SPOOLER_MAX_ATTEMPTS: "3",
+      EMAIL_SPOOLER_LEASE_MS: "300000",
       API_TEST_ENABLED: scenario === "test" ? "true" : "false",
       API_TEST_SEEDS: "false",
       TEST_TENANT_ID: "",
@@ -363,6 +387,12 @@ function validationError(key: string, value: string, values: AppEnvValues): stri
     ) {
       return "Es obligatorio cuando DEFAULT_ADMIN_BOOTSTRAP_ENABLED=true.";
     }
+    if (
+      ["SMTP_HOST", "SMTP_USER", "SMTP_PASS", "MAIL_FROM"].includes(key) &&
+      values.api.EMAIL_SPOOLER_ENABLED === "true"
+    ) {
+      return "Es obligatorio cuando EMAIL_SPOOLER_ENABLED=true.";
+    }
     return optionalKeys.has(key) ? undefined : "No puede quedar vacío.";
   }
   if (key === "DEFAULT_ADMIN_PASSWORD" && (value.length < 12 || value.length > 256)) {
@@ -389,6 +419,9 @@ function validationError(key: string, value: string, values: AppEnvValues): stri
     key === "DEFAULT_ADMIN_EMAIL" &&
     (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || value.length > 254)
   ) {
+    return "Ingresá un email válido.";
+  }
+  if (key === "MAIL_FROM" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
     return "Ingresá un email válido.";
   }
   if (httpUrlKeys.has(key)) {

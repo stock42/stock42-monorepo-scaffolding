@@ -16,7 +16,18 @@
         "BACKOFFICE_PORT",
         "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
         "DEFAULT_ADMIN_EMAIL",
-        "DEFAULT_ADMIN_PASSWORD"
+        "DEFAULT_ADMIN_PASSWORD",
+        "EMAIL_SPOOLER_ENABLED",
+        "SMTP_HOST",
+        "SMTP_PORT",
+        "SMTP_SECURE",
+        "SMTP_USER",
+        "SMTP_PASS",
+        "MAIL_FROM",
+        "EMAIL_SPOOLER_INTERVAL_MS",
+        "EMAIL_SPOOLER_BATCH_SIZE",
+        "EMAIL_SPOOLER_MAX_ATTEMPTS",
+        "EMAIL_SPOOLER_LEASE_MS"
       ]
     },
     "dev:telegram": {
@@ -33,7 +44,18 @@
         "BACKOFFICE_PORT",
         "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
         "DEFAULT_ADMIN_EMAIL",
-        "DEFAULT_ADMIN_PASSWORD"
+        "DEFAULT_ADMIN_PASSWORD",
+        "EMAIL_SPOOLER_ENABLED",
+        "SMTP_HOST",
+        "SMTP_PORT",
+        "SMTP_SECURE",
+        "SMTP_USER",
+        "SMTP_PASS",
+        "MAIL_FROM",
+        "EMAIL_SPOOLER_INTERVAL_MS",
+        "EMAIL_SPOOLER_BATCH_SIZE",
+        "EMAIL_SPOOLER_MAX_ATTEMPTS",
+        "EMAIL_SPOOLER_LEASE_MS"
       ]
     },
     "check-types": {

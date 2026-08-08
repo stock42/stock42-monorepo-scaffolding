@@ -3,6 +3,8 @@ import {
   BackofficeAgentRunInputSchema,
   CreateTelegramAiAccessInputSchema,
   CreateAgentRunInputSchema,
+  CreateEmailCampaignInputSchema,
+  CreateUserGroupInputSchema,
   CreateTenantInputSchema,
   LoginInputSchema,
   InternalRunEnvelopeSchema,
@@ -145,6 +147,27 @@ describe("shared contracts", () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         version: 1,
+      }).success,
+    ).toBe(false);
+  });
+
+  test("bounds manual email audiences and requires campaign idempotency", () => {
+    const tenantId = crypto.randomUUID();
+    expect(
+      CreateUserGroupInputSchema.safeParse({
+        tenantId,
+        name: "Clientes activos",
+        userIds: [crypto.randomUUID()],
+      }).success,
+    ).toBe(true);
+    expect(
+      CreateEmailCampaignInputSchema.safeParse({
+        tenantId,
+        name: "Novedades",
+        templateId: crypto.randomUUID(),
+        groupId: crypto.randomUUID(),
+        scheduledAt: new Date().toISOString(),
+        idempotencyKey: "short",
       }).success,
     ).toBe(false);
   });

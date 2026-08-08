@@ -91,6 +91,7 @@ export async function startApi(): Promise<RunningApi> {
   });
 
   context.websocket.start(server);
+  context.emailMarketing.start();
   console.info("Stock42 API ready", {
     url: server.url.toString(),
     websocket: config.websocket.publicUrl,
@@ -101,6 +102,7 @@ export async function startApi(): Promise<RunningApi> {
     if (closing) return closing;
     closing = (async () => {
       clearInterval(sweepTimer);
+      await context.emailMarketing.stop();
       context.ready = false;
       const listenerStop = stopSharedListener(
         server,

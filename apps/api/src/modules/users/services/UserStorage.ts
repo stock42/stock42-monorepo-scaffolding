@@ -42,4 +42,14 @@ export class UserStorage extends MongoDBStorage<UserDocument> {
     const documents = await this.findBounded({ tenantId }, { limit, cursor });
     return documents.map((document) => new UserModel(document));
   }
+
+  async findActiveByUuids(tenantId: string, uuids: string[]): Promise<UserModel[]> {
+    if (uuids.length === 0) return [];
+    const documents = await this.collection
+      .find({ tenantId, uuid: { $in: [...new Set(uuids)] }, status: "active" })
+      .sort({ uuid: 1 })
+      .limit(5_000)
+      .toArray();
+    return documents.map((document) => new UserModel(document));
+  }
 }

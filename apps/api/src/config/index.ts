@@ -74,6 +74,17 @@ const ApiConfigSchema = z
     RATE_LIMIT_REQUESTS: PositiveIntegerSchema("120"),
     RATE_LIMIT_LOGIN_REQUESTS: PositiveIntegerSchema("10"),
     RATE_LIMIT_AGENT_REQUESTS: PositiveIntegerSchema("20"),
+    EMAIL_SPOOLER_ENABLED: BooleanStringSchema,
+    SMTP_HOST: OptionalStringSchema,
+    SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
+    SMTP_SECURE: BooleanStringSchema,
+    SMTP_USER: OptionalStringSchema,
+    SMTP_PASS: OptionalStringSchema,
+    MAIL_FROM: z.preprocess((value) => (value === "" ? undefined : value), EmailSchema.optional()),
+    EMAIL_SPOOLER_INTERVAL_MS: PositiveIntegerSchema("60000"),
+    EMAIL_SPOOLER_BATCH_SIZE: PositiveIntegerSchema("25"),
+    EMAIL_SPOOLER_MAX_ATTEMPTS: PositiveIntegerSchema("3"),
+    EMAIL_SPOOLER_LEASE_MS: PositiveIntegerSchema("300000"),
     API_TEST_ENABLED: BooleanStringSchema,
     API_TEST_SEEDS: BooleanStringSchema,
     TEST_TENANT_ID: z.string().uuid().optional().or(z.literal("")),
@@ -93,6 +104,13 @@ const ApiConfigSchema = z
       }
       if (!value.DEFAULT_ADMIN_PASSWORD) {
         context.addIssue({ code: "custom", path: ["DEFAULT_ADMIN_PASSWORD"], message: "Required" });
+      }
+    }
+    if (value.EMAIL_SPOOLER_ENABLED) {
+      for (const key of ["SMTP_HOST", "SMTP_USER", "SMTP_PASS", "MAIL_FROM"] as const) {
+        if (!value[key]) {
+          context.addIssue({ code: "custom", path: [key], message: "Required" });
+        }
       }
     }
     if (value.NODE_ENV !== "production") return;
@@ -192,6 +210,22 @@ const ApiConfigSchema = z
       requests: value.RATE_LIMIT_REQUESTS,
       loginRequests: value.RATE_LIMIT_LOGIN_REQUESTS,
       agentRequests: value.RATE_LIMIT_AGENT_REQUESTS,
+    },
+    email: {
+      enabled: value.EMAIL_SPOOLER_ENABLED,
+      configured: Boolean(value.SMTP_HOST && value.SMTP_USER && value.SMTP_PASS && value.MAIL_FROM),
+      smtp: {
+        host: value.SMTP_HOST,
+        port: value.SMTP_PORT,
+        secure: value.SMTP_SECURE,
+        user: value.SMTP_USER,
+        pass: value.SMTP_PASS,
+      },
+      from: value.MAIL_FROM,
+      intervalMs: value.EMAIL_SPOOLER_INTERVAL_MS,
+      batchSize: Math.min(value.EMAIL_SPOOLER_BATCH_SIZE, 100),
+      maxAttempts: Math.min(value.EMAIL_SPOOLER_MAX_ATTEMPTS, 10),
+      leaseMs: value.EMAIL_SPOOLER_LEASE_MS,
     },
     testing: {
       enabled: value.API_TEST_ENABLED,

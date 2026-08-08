@@ -63,16 +63,17 @@ una diferencia de UX.
 
 ## Rutas de interfaz
 
-| Path            | Rol                                | Función                           |
-| --------------- | ---------------------------------- | --------------------------------- |
-| `/`             | Cualquiera                         | Redirige a `/dashboard`.          |
-| `/login`        | Público                            | Login de plataforma o tenant.     |
-| `/dashboard`    | Administrador u operador           | Resumen del control plane.        |
-| `/tenants`      | `platform_admin`                   | Directorio y alta de tenants.     |
-| `/tenants/[id]` | `platform_admin`                   | Operadores y usuarios del tenant. |
-| `/people`       | `tenant_owner` o `tenant_operator` | Personas del tenant de la sesión. |
-| `/agent`        | Administrador u operador           | Agente durable en tiempo real.    |
-| `/telegram-ai`  | `platform_admin` o `tenant_owner`  | CRUD de IDs Telegram autorizados. |
+| Path               | Rol                                | Función                           |
+| ------------------ | ---------------------------------- | --------------------------------- |
+| `/`                | Cualquiera                         | Redirige a `/dashboard`.          |
+| `/login`           | Público                            | Login de plataforma o tenant.     |
+| `/dashboard`       | Administrador u operador           | Resumen del control plane.        |
+| `/tenants`         | `platform_admin`                   | Directorio y alta de tenants.     |
+| `/tenants/[id]`    | `platform_admin`                   | Operadores y usuarios del tenant. |
+| `/people`          | `tenant_owner` o `tenant_operator` | Personas del tenant de la sesión. |
+| `/agent`           | Administrador u operador           | Agente durable en tiempo real.    |
+| `/telegram-ai`     | `platform_admin` o `tenant_owner`  | CRUD de IDs Telegram autorizados. |
+| `/email-marketing` | `platform_admin` o `tenant_owner`  | Grupos, campañas y spooler.       |
 
 `app/(protected)/layout.tsx` exige un actor cuyo `kind` no sea `user`.
 
@@ -245,6 +246,24 @@ validar en cada mensaje que:
 El CRUD no habilita por sí solo el polling. También se necesitan
 `TELEGRAM_POLLING_ENABLED=true` y `TELEGRAM_BOT_TOKEN`.
 
+## Email marketing
+
+La pantalla `/email-marketing` reúne cuatro superficies:
+
+- campañas: selección de grupo y plantilla, programación, resumen por estado y
+  detención;
+- grupos: alta manual, activación, miembros reales del tenant, altas
+  idempotentes y bajas auditadas;
+- plantillas: alta y edición de nombre, asunto, HTML y estado;
+- spooler: salud tenant-scoped, destinatario, snapshot del contenido, estado,
+  intentos, error acotado, envío inmediato y detención.
+
+Un `platform_admin` selecciona tenant; un `tenant_owner` queda fijado al tenant
+de su sesión. La página redirige a otros roles y la API aplica nuevamente
+`requireTenantManager`. Todas las mutaciones usan CSRF. El navegador nunca
+recibe host, usuario o password SMTP, y tampoco puede elegir libremente el
+remitente: `MAIL_FROM` pertenece al runtime de la API.
+
 ## BFF
 
 El helper `lib/api-proxy.ts`:
@@ -300,6 +319,27 @@ El helper `lib/api-proxy.ts`:
 | `POST`   | `/api/telegram-ai/access/create`      |
 | `PATCH`  | `/api/telegram-ai/access/[id]/update` |
 | `DELETE` | `/api/telegram-ai/access/[id]`        |
+
+### Email marketing
+
+| Método   | Route Handler                                       |
+| -------- | --------------------------------------------------- |
+| `GET`    | `/api/email-marketing/groups`                       |
+| `POST`   | `/api/email-marketing/groups/create`                |
+| `PATCH`  | `/api/email-marketing/groups/[id]/update`           |
+| `GET`    | `/api/email-marketing/groups/[id]/members`          |
+| `POST`   | `/api/email-marketing/groups/[id]/members/add`      |
+| `DELETE` | `/api/email-marketing/groups/[id]/members/[userId]` |
+| `GET`    | `/api/email-marketing/templates`                    |
+| `POST`   | `/api/email-marketing/templates/create`             |
+| `PATCH`  | `/api/email-marketing/templates/[id]/update`        |
+| `GET`    | `/api/email-marketing/campaigns`                    |
+| `POST`   | `/api/email-marketing/campaigns/create`             |
+| `POST`   | `/api/email-marketing/campaigns/[id]/stop`          |
+| `GET`    | `/api/email-marketing/spooler`                      |
+| `GET`    | `/api/email-marketing/spooler/health`               |
+| `POST`   | `/api/email-marketing/spooler/[id]/send-now`        |
+| `POST`   | `/api/email-marketing/spooler/[id]/stop`            |
 
 No usar catch-all. Cada path debe permanecer explícito.
 

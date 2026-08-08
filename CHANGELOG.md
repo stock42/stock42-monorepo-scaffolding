@@ -9,6 +9,14 @@ El formato sigue una versión simplificada de
 
 ### Added
 
+- Se implementó email marketing de extremo a extremo: contratos Zod,
+  colecciones e índices MongoDB tenant-aware, grupos manuales y miembros,
+  plantillas HTML versionadas, campañas idempotentes con snapshots por usuario,
+  spooler SMTP persistente con lease/reintentos/estados terminales, auditoría,
+  BFF explícito y una pantalla Backoffice para programación y operación. La
+  entrega queda deshabilitada por defecto y exige configuración SMTP completa y
+  un `MAIL_FROM` server-owned.
+
 - Se completó el tiempo real nativo de extremo a extremo: `/ws` negocia el
   subprotocolo `stock42.realtime.v1`, autoriza topics tenant-aware y publica con
   `subscribe`/`unsubscribe`/`publish` de `s42-core`/Bun; Webapp y Backoffice

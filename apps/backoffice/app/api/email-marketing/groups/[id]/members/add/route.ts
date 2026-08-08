@@ -1,0 +1,10 @@
+import { AddUserGroupMembersInputSchema } from "@stock42/contracts/email-marketing";
+import { proxyApi } from "@/lib/api-proxy";
+
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  return proxyApi(request, `/user-groups/${encodeURIComponent(id)}/members/add`, {
+    method: "POST",
+    bodySchema: AddUserGroupMembersInputSchema,
+  });
+}

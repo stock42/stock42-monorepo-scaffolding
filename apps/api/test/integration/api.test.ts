@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { AuthResponseSchema, CsrfResponseSchema } from "@stock42/contracts/auth";
 import {
+  EmailCampaignListResponseSchema,
+  EmailCampaignResponseSchema,
+  EmailDeliveryHealthResponseSchema,
+  EmailSpoolerListResponseSchema,
+  EmailTemplateResponseSchema,
+  UserGroupResponseSchema,
+} from "@stock42/contracts/email-marketing";
+import {
   TelegramAiAccessListResponseSchema,
   TelegramAiAccessResponseSchema,
 } from "@stock42/contracts/telegram-ai";
@@ -91,6 +99,21 @@ async function markFixtures(tenantId: string, ids: string[]): Promise<void> {
   ]);
 }
 
+async function markEmailFixtures(tenantId: string): Promise<void> {
+  const db = getAppContext().mongo.getDB();
+  await Promise.all(
+    [
+      "user_groups",
+      "user_group_members",
+      "email_templates",
+      "email_campaigns",
+      "email_spooler",
+    ].map((collection) =>
+      db.collection(collection).updateMany({ tenantId }, { $set: { testRunId } }),
+    ),
+  );
+}
+
 async function receiveFirstWebSocketMessage(url: URL): Promise<{
   socket: WebSocket;
   data: unknown;
@@ -131,6 +154,8 @@ describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
     if (!Bun.env.MONGODB_URI || !Bun.env.MONGODB_DB || !Bun.env.TEST_TENANT_ID) {
       throw new Error("Los tests requieren MONGODB_URI, MONGODB_DB y TEST_TENANT_ID exactos.");
     }
+    Bun.env.EMAIL_SPOOLER_ENABLED = "false";
+    Bun.env.MAIL_FROM = `${testRunId}@example.test`;
     const { startApi } = await import("@/index");
     running = await startApi();
     await getAppContext()
@@ -161,6 +186,11 @@ describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
       "operators",
       "users",
       "agent_telegram_access",
+      "user_groups",
+      "user_group_members",
+      "email_templates",
+      "email_campaigns",
+      "email_spooler",
       "audit_events",
     ]) {
       await db.collection(collection).deleteMany({ testRunId });
@@ -169,7 +199,7 @@ describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
     await running.close();
   });
 
-  test("covers health, auth, tenancy, Telegram AI CRUD, isolation and WS tickets", async () => {
+  test("covers health, auth, tenancy, email marketing, Telegram AI, isolation and WS", async () => {
     const baseUrl = running?.server.url;
     if (!baseUrl) throw new Error("API no iniciada.");
 
@@ -271,6 +301,81 @@ describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
       ),
     );
     expect(users.data.items.some((item) => item.uuid === user.uuid)).toBe(true);
+
+    const groupResponse = await mutate(baseUrl, adminJar, "/user-groups/create", {
+      tenantId: tenant.uuid,
+      name: `API Test Audience ${suffix}`,
+      description: "Audience created by the integration suite",
+      userIds: [user.uuid],
+    });
+    expect(groupResponse.status).toBe(201);
+    const group = UserGroupResponseSchema.parse(await jsonBody(groupResponse)).data;
+    expect(group.memberCount).toBe(1);
+
+    const templateResponse = await mutate(baseUrl, adminJar, "/email-templates/create", {
+      tenantId: tenant.uuid,
+      name: `API Test Template ${suffix}`,
+      subject: "Hola {{displayName}}",
+      body: "<p>Mensaje para {{user.email}}</p>",
+    });
+    expect(templateResponse.status).toBe(201);
+    const template = EmailTemplateResponseSchema.parse(await jsonBody(templateResponse)).data;
+
+    const campaignResponse = await mutate(baseUrl, adminJar, "/email-campaigns/create", {
+      tenantId: tenant.uuid,
+      name: `API Test Campaign ${suffix}`,
+      templateId: template.uuid,
+      groupId: group.uuid,
+      scheduledAt: new Date(Date.now() + 86_400_000).toISOString(),
+      idempotencyKey: crypto.randomUUID(),
+    });
+    expect(campaignResponse.status).toBe(201);
+    const campaign = EmailCampaignResponseSchema.parse(await jsonBody(campaignResponse)).data;
+    expect(campaign.summary).toMatchObject({ pending: 1, total: 1 });
+
+    const campaigns = EmailCampaignListResponseSchema.parse(
+      await jsonBody(
+        await fetch(new URL(`/email-campaigns?tenantId=${tenant.uuid}&limit=100`, baseUrl), {
+          headers: { cookie: adminJar.header() },
+        }),
+      ),
+    );
+    expect(campaigns.data.items.some((item) => item.uuid === campaign.uuid)).toBe(true);
+
+    const spooler = EmailSpoolerListResponseSchema.parse(
+      await jsonBody(
+        await fetch(
+          new URL(
+            `/email-spooler?tenantId=${tenant.uuid}&campaignId=${campaign.uuid}&limit=100`,
+            baseUrl,
+          ),
+          { headers: { cookie: adminJar.header() } },
+        ),
+      ),
+    );
+    expect(spooler.data.items).toHaveLength(1);
+    expect(spooler.data.items[0]).toMatchObject({ to: user.email, status: "pending" });
+
+    const emailHealth = EmailDeliveryHealthResponseSchema.parse(
+      await jsonBody(
+        await fetch(new URL(`/email-spooler/health?tenantId=${tenant.uuid}`, baseUrl), {
+          headers: { cookie: adminJar.header() },
+        }),
+      ),
+    );
+    expect(emailHealth.data).toMatchObject({ enabled: false, configured: false, pending: 1 });
+
+    const stoppedCampaign = EmailCampaignResponseSchema.parse(
+      await jsonBody(
+        await mutate(baseUrl, adminJar, `/email-campaigns/${campaign.uuid}/stop`, {
+          tenantId: tenant.uuid,
+        }),
+      ),
+    ).data;
+    expect(stoppedCampaign.status).toBe("stopped");
+    expect(stoppedCampaign.summary.stopped).toBe(1);
+    await markEmailFixtures(tenant.uuid);
+    await markFixtures(tenant.uuid, [group.uuid, template.uuid, campaign.uuid]);
 
     const updatedResponse = await mutate(
       baseUrl,

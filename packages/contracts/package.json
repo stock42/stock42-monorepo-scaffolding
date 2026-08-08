@@ -8,6 +8,7 @@
     "./agent": "./src/agent.ts",
     "./auth": "./src/auth.ts",
     "./common": "./src/common.ts",
+    "./email-marketing": "./src/email-marketing.ts",
     "./files": "./src/files.ts",
     "./telegram-ai": "./src/telegram-ai.ts",
     "./tenancy": "./src/tenancy.ts",

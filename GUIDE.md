@@ -177,6 +177,7 @@ operators
 users
 agent
 telegram-ai
+email-marketing
 files
 ```
 
@@ -462,6 +463,36 @@ opt-in.
 - `Telegram AI`: CRUD de IDs de usuario autorizados. Un ID es globalmente único,
   se liga al tenant y al actor autenticado que lo crea, y puede quedar activo o
   inactivo con control optimista de versión.
+- `Email marketing`: grupos y miembros manuales, plantillas HTML, programación
+  y detención de campañas, estado de entrega y operación de entradas del
+  spooler. Sólo `platform_admin` y `tenant_owner` pueden acceder; la API vuelve
+  a aplicar la política en cada endpoint.
+
+### Email marketing y spooler
+
+La API persiste `user_groups`, `user_group_members`, `email_templates`,
+`email_campaigns` y `email_spooler`. Una campaña copia asunto y cuerpo ya
+renderizados para cada usuario activo del grupo; las variables soportadas son
+`{{displayName}}`, `{{email}}` y sus variantes `{{user.*}}`. Los valores del
+usuario se escapan al insertarlos en HTML.
+
+La entrega queda deshabilitada por defecto. Para habilitarla:
+
+```dotenv
+EMAIL_SPOOLER_ENABLED=true
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=mailer
+SMTP_PASS=...
+MAIL_FROM=news@example.com
+```
+
+`EMAIL_SPOOLER_INTERVAL_MS`, `EMAIL_SPOOLER_BATCH_SIZE`,
+`EMAIL_SPOOLER_MAX_ATTEMPTS` y `EMAIL_SPOOLER_LEASE_MS` controlan frecuencia,
+lote, reintentos y lease. El worker reclama cada entrada de forma atómica,
+recupera leases vencidos y sólo marca `sent` después de que SMTP confirma. Los
+errores quedan acotados a 1.000 caracteres y no incluyen body ni credenciales.
 
 ## 13. Uploads y artifacts
 

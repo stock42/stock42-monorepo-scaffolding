@@ -5,6 +5,18 @@ import type { AppContext } from "@/context";
 import { AdministratorStorage } from "@/modules/administrators/services/AdministratorStorage";
 import { AgentClient } from "@/modules/agent/services/AgentClient";
 import { AuthService } from "@/modules/auth/services/AuthService";
+import { EmailMarketingService } from "@/modules/email-marketing/services/EmailMarketingService";
+import {
+  EMAIL_CAMPAIGNS_COLLECTION,
+  EMAIL_SPOOLER_COLLECTION,
+  EMAIL_TEMPLATES_COLLECTION,
+  USER_GROUP_MEMBERS_COLLECTION,
+  USER_GROUPS_COLLECTION,
+  EmailCampaignStorage,
+  EmailSpoolerStorage,
+  EmailTemplateStorage,
+  UserGroupStorage,
+} from "@/modules/email-marketing/services/EmailMarketingStorage";
 import { OperatorStorage } from "@/modules/operators/services/OperatorStorage";
 import { TenancyService } from "@/modules/tenants/services/TenancyService";
 import { TenantStorage } from "@/modules/tenants/services/TenantStorage";
@@ -59,6 +71,13 @@ export async function runBoot(config: ApiConfig): Promise<AppContext> {
   const telegramAiAccess = new TelegramAiAccessStorage(
     mongo.getCollection(TELEGRAM_AI_ACCESS_COLLECTION),
   );
+  const userGroups = new UserGroupStorage(
+    mongo.getCollection(USER_GROUPS_COLLECTION),
+    mongo.getCollection(USER_GROUP_MEMBERS_COLLECTION),
+  );
+  const emailTemplates = new EmailTemplateStorage(mongo.getCollection(EMAIL_TEMPLATES_COLLECTION));
+  const emailCampaigns = new EmailCampaignStorage(mongo.getCollection(EMAIL_CAMPAIGNS_COLLECTION));
+  const emailSpooler = new EmailSpoolerStorage(mongo.getCollection(EMAIL_SPOOLER_COLLECTION));
   const audit = new AuditService(mongo.getCollection("audit_events"));
   const tickets = new WebSocketTicketService(mongo.getCollection("websocket_tickets"), config);
   const agentClient = new AgentClient(config.agent);
@@ -66,17 +85,35 @@ export async function runBoot(config: ApiConfig): Promise<AppContext> {
   const auth = new AuthService({ config, administrators, tenants, operators, users });
   const tenancy = new TenancyService(tenants, operators, users, audit);
   const websocket = new WebSocketGateway(tickets, agentClient, auth, config);
+  const emailMarketing = new EmailMarketingService(config.email, {
+    groups: userGroups,
+    templates: emailTemplates,
+    campaigns: emailCampaigns,
+    spooler: emailSpooler,
+    users,
+  });
 
   const context: AppContext = {
     config,
     mongo,
-    storages: { administrators, tenants, operators, users, telegramAiAccess },
+    storages: {
+      administrators,
+      tenants,
+      operators,
+      users,
+      telegramAiAccess,
+      userGroups,
+      emailTemplates,
+      emailCampaigns,
+      emailSpooler,
+    },
     auth,
     tenancy,
     audit,
     agentClient,
     tickets,
     websocket,
+    emailMarketing,
     rateLimiter,
     ready: false,
   };
@@ -91,6 +128,10 @@ export async function runBoot(config: ApiConfig): Promise<AppContext> {
     await operators.ensureIndexes();
     await users.ensureIndexes();
     await telegramAiAccess.ensureIndexes();
+    await userGroups.ensureIndexes();
+    await emailTemplates.ensureIndexes();
+    await emailCampaigns.ensureIndexes();
+    await emailSpooler.ensureIndexes();
     await audit.ensureIndexes();
     await tickets.ensureIndexes();
   });

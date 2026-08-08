@@ -8,6 +8,7 @@ import {
   Building2,
   ChevronRight,
   CircleGauge,
+  Mail,
   Settings2,
   Shield,
   Sparkles,
@@ -33,6 +34,12 @@ export function ControlShell({
       href: "/telegram-ai",
       label: "Telegram AI",
       icon: Bot,
+      visible: isPlatformAdmin || actor.role === "tenant_owner",
+    },
+    {
+      href: "/email-marketing",
+      label: "Email marketing",
+      icon: Mail,
       visible: isPlatformAdmin || actor.role === "tenant_owner",
     },
   ].filter((item) => item.visible);

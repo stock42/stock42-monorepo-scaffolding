@@ -26,8 +26,8 @@ Este monorepo entrega esa base integrada:
 
 - **Webapp:** aplicación Next.js para el usuario final, autenticada y aislada
   por tenant.
-- **Backoffice:** control de plataforma, tenants, personas, runs, approvals y
-  accesos de Telegram.
+- **Backoffice:** control de plataforma, tenants, personas, runs, approvals,
+  accesos de Telegram y email marketing.
 - **API:** servicio Bun con `s42-core`, MongoDB, auth, RBAC, auditoría, archivos
   y WebSocket nativo.
 - **Agent runtime:** servicio privado con DeepSeek, cola durable, procesos
@@ -105,6 +105,7 @@ memoria de un único proceso.
 | Tools               | Contexto y fecha, uploads por owner, CSV anti-fórmula, PDF, artifacts y Telegram sólo a destinos server-owned con confirmation preview                  |
 | Archivos            | Uploads y artifacts con metadata en MongoDB, bytes fuera de la base y descarga autorizada                                                               |
 | Telegram            | `getUpdates` opt-in en desarrollo, bindings administrados por servidor, conversaciones por chat, comandos de estado/cancelación y entrega de respuestas |
+| Email marketing     | Grupos manuales, miembros tenant-scoped, plantillas HTML, campañas idempotentes y spooler SMTP persistente con leases, reintentos y operación manual    |
 | Calidad             | Unit tests con `bun:test`, integración API opt-in, E2E desktop/mobile con Playwright, boundaries y pipeline CI                                          |
 
 ### Límites deliberados
@@ -135,6 +136,7 @@ memoria de un único proceso.
 | API                       | `s42-core` 3.0.13 sobre un listener `Bun.serve` compartido |
 | Tiempo real               | WebSocket nativo de `s42-core`/Bun                         |
 | Persistencia              | MongoDB 6 driver, sin ORM                                  |
+| Email                     | SMTP mediante Nodemailer y spooler durable                 |
 | Contratos                 | Zod 4 compartido end-to-end                                |
 | IA                        | DeepSeek `deepseek-v4-pro` con tool calls                  |
 | Testing                   | `bun:test` + Playwright                                    |
@@ -180,6 +182,8 @@ routes.
 - Una instancia MongoDB accesible y una base **ya existente**.
 - Una API key de DeepSeek para ejecutar runs reales.
 - Un token de Telegram solo si se habilitará esa integración.
+- Credenciales SMTP y un remitente verificado sólo si se habilitará la entrega
+  de campañas.
 
 Nginx y Playwright son opcionales para el primer arranque local.
 
@@ -239,6 +243,11 @@ bun run --cwd apps/agent dev:telegram
 
 No ejecutes webhook y `getUpdates` con el mismo bot. La ausencia de
 `TELEGRAM_BOT_TOKEN` mantiene el polling deshabilitado y sin reintentos.
+
+El spooler de email también queda apagado por defecto. Para entregar campañas
+se configura SMTP y `MAIL_FROM`, y recién entonces se habilita
+`EMAIL_SPOOLER_ENABLED=true`. Sin esas credenciales se pueden administrar grupos
+y plantillas, pero la API no permite programar una campaña sin remitente.
 
 ## Comandos principales
 
@@ -309,6 +318,9 @@ La guía completa está en [AI Agents](./docs/AI-AGENTS.md#desarrollo-de-una-too
 - comunicación API → agente mediante token interno;
 - contexto tenant/actor/rol incluido en la firma interna;
 - recursos agénticos filtrados por owner o manager autorizado;
+- audiencias, campañas, cola y métricas de email aisladas por tenant;
+- remitente de campañas fijado por servidor, reclamo atómico del spooler y
+  fallos SMTP que nunca se registran como envíos exitosos;
 - IP derivada sólo de proxies explícitamente confiables;
 - errores productivos sanitizados y logs sin credenciales;
 - effects abortables, fencing por proceso y confirmations con preview;
