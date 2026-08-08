@@ -9,6 +9,16 @@ El formato sigue una versión simplificada de
 
 ### Added
 
+- Se completó el tiempo real nativo de extremo a extremo: `/ws` negocia el
+  subprotocolo `stock42.realtime.v1`, autoriza topics tenant-aware y publica con
+  `subscribe`/`unsubscribe`/`publish` de `s42-core`/Bun; Webapp y Backoffice
+  comparten un cliente tipado con tickets renovables, reconexión con jitter,
+  orden, deduplicación y replay HTTP acotado como fallback. El shutdown conserva
+  el workaround de `s42-core` para el contador WebSocket obsoleto de Bun 1.3.14
+  y Nginx reenvía explícitamente el subprotocolo negociado.
+- Se agregó `WEBSOCKET_PUBLIC_URL`, validada como `ws://`/`wss://` exacta en
+  `/ws` y obligatoriamente segura en producción, para no derivar el endpoint
+  público desde headers del cliente.
 - Se adoptó Apache License 2.0 y se agregaron `SECURITY.md` y
   `CONTRIBUTING.md` con soporte public preview, reporte privado, esquema
   inbound=outbound, arquitectura, tenancy y gates de contribución.
@@ -92,6 +102,10 @@ El formato sigue una versión simplificada de
 
 ### Changed
 
+- El task Turbo `test:api` ahora permite explícitamente la configuración de
+  runtime y los secretos que consume la integración, incluido el endpoint
+  WebSocket público, para no ejecutar CI con variables filtradas por modo
+  estricto.
 - La configuración productiva de API/agente ahora falla cerrada ante CORS
   wildcard o placeholder, cookies inseguras, tests activos, rate limit apagado,
   secretos placeholder/reutilizados, URL pública del agente o bind público sin

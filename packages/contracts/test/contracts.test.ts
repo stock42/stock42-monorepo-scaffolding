@@ -7,7 +7,10 @@ import {
   LoginInputSchema,
   InternalRunEnvelopeSchema,
   TelegramAiAccessSchema,
+  STOCK42_REALTIME_SUBPROTOCOL,
   WebSocketClientMessageSchema,
+  WebSocketServerMessageSchema,
+  WebSocketTicketResponseSchema,
 } from "../src";
 
 describe("shared contracts", () => {
@@ -68,6 +71,36 @@ describe("shared contracts", () => {
         channel: "everything",
       }).success,
     ).toBe(false);
+  });
+
+  test("versions WebSocket tickets and server readiness", () => {
+    expect(
+      WebSocketTicketResponseSchema.safeParse({
+        ok: true,
+        data: {
+          ticket: "x".repeat(32),
+          expiresAt: new Date().toISOString(),
+          webSocketUrl: "wss://api.example.test/ws",
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      WebSocketTicketResponseSchema.safeParse({
+        ok: true,
+        data: {
+          ticket: "x".repeat(32),
+          expiresAt: new Date().toISOString(),
+          webSocketUrl: "https://api.example.test/ws?token=unsafe",
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      WebSocketServerMessageSchema.safeParse({
+        type: "ready",
+        connectionId: crypto.randomUUID(),
+        protocol: STOCK42_REALTIME_SUBPROTOCOL,
+      }).success,
+    ).toBe(true);
   });
 
   test("requires an explicit tenant for backoffice agent runs", () => {

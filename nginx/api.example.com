@@ -20,6 +20,7 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $example_api_connection_upgrade;
+        proxy_set_header Sec-WebSocket-Protocol $http_sec_websocket_protocol;
 
         proxy_buffering off;
         proxy_read_timeout 3600s;

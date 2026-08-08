@@ -11,7 +11,8 @@ La base implementada incluye:
 - sesión mediante cookies HttpOnly emitidas por la API;
 - layout protegido exclusivo para `tenant_user`;
 - dashboard tenant-aware;
-- creación de runs del agente mediante HTTP;
+- creación de runs conversacionales, seguimiento WebSocket, respuesta y
+  cancelación;
 - Route Handlers BFF explícitos para auth, agente, uploads y artifacts;
 - componentes shadcn compartidos desde `@stock42/ui`;
 - tests Bun y Playwright Chromium desktop/mobile.
@@ -153,12 +154,17 @@ El dashboard muestra:
 1. obtiene CSRF;
 2. crea un run con manifest `assistant`;
 3. genera una idempotency key;
-4. muestra el UUID encolado.
+4. conserva el `conversationId` para continuar la conversación;
+5. solicita un ticket WebSocket por el BFF y abre el endpoint público devuelto;
+6. se suscribe a `agent:run:<uuid>` desde el último cursor durable;
+7. muestra estado, intento, cantidad de eventos y respuesta;
+8. permite cancelar mientras el run no sea terminal;
+9. ante una desconexión usa replay HTTP cada tres segundos hasta reconectar;
+10. al reconectar obtiene otro ticket de un uso, deduplica y ordena eventos.
 
-La base BFF ya expone lectura, eventos y cancelación, y la API ofrece WebSocket.
-La UI actual todavía no sigue el run, no renderiza respuesta, no resuelve
-confirmations y no abre WebSocket. Esas capacidades no deben documentarse como
-terminadas hasta implementar sus componentes.
+La UI no resuelve confirmations ni presenta artifacts todavía. El cliente
+WebSocket vive en `@stock42/api-client/realtime`; no se duplica transporte en la
+app. MongoDB y el replay HTTP siguen siendo la fuente durable.
 
 ## UI compartida
 

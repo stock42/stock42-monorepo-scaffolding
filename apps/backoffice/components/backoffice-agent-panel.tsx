@@ -2,11 +2,13 @@
 
 import {
   AgentRunEventsResponseSchema,
+  AgentRunEventSchema,
   AgentRunResponseSchema,
   type AgentRun,
   type AgentRunEvent,
 } from "@stock42/contracts/agent";
 import { CsrfResponseSchema } from "@stock42/contracts/auth";
+import { AgentRealtimeClient, type RealtimeConnectionState } from "@stock42/api-client/realtime";
 import { TenantListResponseSchema, type Tenant } from "@stock42/contracts/tenancy";
 import { Alert, AlertDescription } from "@stock42/ui/components/alert";
 import { Badge } from "@stock42/ui/components/badge";
@@ -19,8 +21,8 @@ import {
   CardTitle,
 } from "@stock42/ui/components/card";
 import { Label } from "@stock42/ui/components/label";
-import { Ban, Check, LoaderCircle, Send, Sparkles, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Ban, Check, LoaderCircle, Radio, Send, Sparkles, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const terminalStatuses = new Set([
   "succeeded",
@@ -54,9 +56,17 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
   const [run, setRun] = useState<AgentRun | null>(null);
   const [events, setEvents] = useState<AgentRunEvent[]>([]);
   const [cursor, setCursor] = useState(0);
+  const [realtimeState, setRealtimeState] = useState<RealtimeConnectionState>("idle");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const activeRunId = run?.uuid;
+  const activeRunTerminal = run ? terminalStatuses.has(run.status) : false;
+  const cursorRef = useRef(0);
+  const realtimeClientRef = useRef<AgentRealtimeClient | null>(null);
+
+  useEffect(() => {
+    cursorRef.current = cursor;
+  }, [cursor]);
 
   useEffect(() => {
     if (fixedTenantId) return;
@@ -83,9 +93,63 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
     if (!activeRunId || !tenantId) return;
     const runId = activeRunId;
     let active = true;
+    const channel = `agent:run:${runId}`;
+
+    async function refreshRun() {
+      const response = await fetch(
+        `/api/agent/runs/${encodeURIComponent(runId)}?tenantId=${encodeURIComponent(tenantId)}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) throw new Error("No fue posible actualizar el run.");
+      const nextRun = AgentRunResponseSchema.parse(await response.json()).data;
+      if (!active) return;
+      setRun(nextRun);
+      if (terminalStatuses.has(nextRun.status)) client.stop();
+    }
+
+    const client = new AgentRealtimeClient({
+      onStateChange: (state) => {
+        if (active) setRealtimeState(state);
+      },
+      onError: (message) => {
+        if (active) setError(message);
+      },
+      onEvent: (message) => {
+        if (!active) return;
+        const event = AgentRunEventSchema.parse(message.payload);
+        setEvents((current) =>
+          current.some((item) => item.uuid === event.uuid)
+            ? current
+            : [...current, event].sort((left, right) => left.sequence - right.sequence),
+        );
+        cursorRef.current = message.cursor;
+        setCursor(message.cursor);
+        void refreshRun().catch(() => {
+          if (active) setError("No fue posible actualizar el estado del run.");
+        });
+      },
+    });
+    realtimeClientRef.current = client;
+    client.subscribe(channel, { cursor: cursorRef.current, tenantId });
+    client.start();
+
+    return () => {
+      active = false;
+      client.stop();
+      if (realtimeClientRef.current === client) realtimeClientRef.current = null;
+    };
+  }, [activeRunId, tenantId]);
+
+  useEffect(() => {
+    if (!activeRunId || !tenantId || realtimeState === "open" || activeRunTerminal) {
+      return;
+    }
+    const runId = activeRunId;
+    const channel = `agent:run:${runId}`;
+    let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    async function refresh() {
+    async function refreshFallback() {
       try {
         const [runResponse, eventsResponse] = await Promise.all([
           fetch(
@@ -93,7 +157,7 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
             { cache: "no-store" },
           ),
           fetch(
-            `/api/agent/runs/${encodeURIComponent(runId)}/events?tenantId=${encodeURIComponent(tenantId)}&cursor=${cursor}`,
+            `/api/agent/runs/${encodeURIComponent(runId)}/events?tenantId=${encodeURIComponent(tenantId)}&cursor=${cursorRef.current}`,
             { cache: "no-store" },
           ),
         ]);
@@ -105,24 +169,31 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
         if (!active) return;
         setRun(nextRun);
         if (nextEvents.events.length) {
-          setEvents((current) => [...current, ...nextEvents.events]);
-          setCursor(nextEvents.nextCursor);
+          setEvents((current) => {
+            const known = new Set(current.map((item) => item.uuid));
+            return [...current, ...nextEvents.events.filter((item) => !known.has(item.uuid))].sort(
+              (left, right) => left.sequence - right.sequence,
+            );
+          });
         }
-        if (!terminalStatuses.has(nextRun.status)) timer = setTimeout(refresh, 1_500);
+        cursorRef.current = nextEvents.nextCursor;
+        setCursor(nextEvents.nextCursor);
+        realtimeClientRef.current?.advanceCursor(channel, nextEvents.nextCursor);
+        if (!terminalStatuses.has(nextRun.status)) timer = setTimeout(refreshFallback, 3_000);
       } catch (cause) {
         if (active) {
           setError(cause instanceof Error ? cause.message : "No fue posible actualizar el run.");
-          timer = setTimeout(refresh, 3_000);
+          timer = setTimeout(refreshFallback, 3_000);
         }
       }
     }
 
-    timer = setTimeout(refresh, 500);
+    timer = setTimeout(refreshFallback, 750);
     return () => {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [activeRunId, cursor, tenantId]);
+  }, [activeRunId, activeRunTerminal, realtimeState, tenantId]);
 
   const pendingConfirmations = useMemo(() => {
     const pendingItems = new Map<
@@ -154,6 +225,7 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
     setRun(null);
     setEvents([]);
     setCursor(0);
+    setRealtimeState("idle");
   }
 
   async function createRun(event: React.FormEvent<HTMLFormElement>) {
@@ -184,6 +256,7 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
       setConversationId(created.conversationId);
       setEvents([]);
       setCursor(0);
+      setRealtimeState("connecting");
       setTask("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No fue posible crear la ejecución.");
@@ -236,7 +309,7 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
             <CardTitle>Agente del backoffice</CardTitle>
           </div>
           <CardDescription>
-            Interfaz HTTP sobre el mismo runtime durable que atiende Telegram.
+            Tiempo real nativo con replay durable sobre el mismo runtime que atiende Telegram.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-5 pt-6">
@@ -339,7 +412,12 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
       <Card className="h-fit">
         <CardHeader>
           <CardTitle>Estado del run</CardTitle>
-          <CardDescription>Seguimiento por HTTP con replay de eventos.</CardDescription>
+          <CardDescription className="flex items-center gap-2">
+            <Radio className="size-3.5" />
+            {realtimeState === "open"
+              ? "WebSocket conectado"
+              : "Reconectando · replay HTTP de respaldo"}
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           {run ? (

@@ -61,9 +61,10 @@ No crear `.env.local`.
 5. Registra `/ws` con `WebSocketController` y `WebSocketControllers` de
    `s42-core`.
 6. Crea un único `Bun.serve` y le entrega el dispatcher WebSocket nativo.
-7. Inicia el bridge de eventos y el heartbeat WebSocket.
-8. Atiende `SIGINT` y `SIGTERM`, detiene timers y sockets, cierra MongoDB y
-   limpia el registro de dependencias.
+7. Conecta el publisher nativo al bridge de eventos e inicia la revalidación
+   periódica de conexiones.
+8. Atiende `SIGINT` y `SIGTERM`, detiene timers y sockets, contempla el contador
+   WebSocket obsoleto de Bun 1.3.14, cierra MongoDB y limpia dependencias.
 
 El listener tiene:
 
@@ -115,6 +116,7 @@ bases de test implícitas.
 | `AUTH_REFRESH_SECRET`             | requerido        | Firma HMAC del refresh token; mínimo 32 caracteres.    |
 | `CSRF_SECRET`                     | requerido        | Firma y binding de CSRF; mínimo 32 caracteres.         |
 | `WEBSOCKET_TICKET_SECRET`         | requerido        | Firma de tickets WebSocket de un solo uso.             |
+| `WEBSOCKET_PUBLIC_URL`            | `ws://.../ws`    | Endpoint público que recibe el cliente con el ticket.  |
 | `CORS_ORIGINS`                    | `*`              | Allowlist separada por comas; producción la restringe. |
 | `COOKIE_SECURE`                   | `false`          | Agrega `Secure` a las cookies.                         |
 | `ACCESS_TOKEN_TTL_SECONDS`        | `900`            | Vida del access token.                                 |
@@ -142,6 +144,10 @@ placeholder, las cookies no son seguras, se habilitan flags de test, se apaga
 el rate limit, se reutilizan secretos, quedan placeholders o la URL del agente
 es pública sin override. El override debe ser una decisión deliberada del
 despliegue, no un default del template.
+
+La URL WebSocket pública debe usar `wss:`, no contener credenciales, query ni
+fragment y terminar exactamente en `/ws`. Se configura explícitamente para no
+confiar en `Host` o headers de proxy enviados por el cliente.
 
 ## Módulos
 
@@ -240,7 +246,7 @@ Ocultar una pantalla o enlace en Next.js nunca reemplaza estas verificaciones.
 
 ## WebSocket
 
-El endpoint es:
+El endpoint local por defecto es:
 
 ```text
 ws://127.0.0.1:3822/ws?ticket=<ticket-de-un-solo-uso>
@@ -249,12 +255,16 @@ ws://127.0.0.1:3822/ws?ticket=<ticket-de-un-solo-uso>
 Flujo:
 
 1. El cliente autenticado solicita `POST /auth/ws-tickets/create` con CSRF.
-2. La API persiste el hash del ticket en `websocket_tickets`.
-3. El upgrade consume el ticket de forma atómica, revalida actor/tenant/rol y
-   vence a los 60 segundos.
-4. El cliente se suscribe a `agent:run:<uuid>`.
-5. La API verifica el run contra el runtime del agente.
-6. El bridge hace replay desde el cursor durable y publica eventos del tenant.
+2. La API persiste el hash en `websocket_tickets` y responde el ticket junto
+   con `webSocketUrl`.
+3. El cliente conecta con `stock42.realtime.v1`; el upgrade consume el ticket
+   de forma atómica, revalida actor/tenant/rol y rechaza otro subprotocolo.
+4. El cliente se suscribe a `agent:run:<uuid>` con su cursor. Sólo
+   `platform_admin` debe enviar además el tenant seleccionado.
+5. La API vuelve a revalidar al actor, verifica el run y deriva internamente el
+   topic `tenant:<tenantId>:agent:run:<runId>`.
+6. El socket usa `subscribe`/`unsubscribe` nativos y el bridge entrega cada
+   evento con un único `server.publish` al topic autorizado.
 
 La ruta se declara como `WebSocketController<SocketData>` y se agrega a un
 registro `WebSocketControllers`. La API conserva la propiedad del
@@ -262,14 +272,22 @@ registro `WebSocketControllers`. La API conserva la propiedad del
 HTTP, mientras s42-core resuelve el routing, el upgrade y el lifecycle
 WebSocket nativo sobre ese mismo listener.
 
+`@stock42/api-client/realtime` implementa el cliente browser compartido: pide
+CSRF y ticket nuevos, valida el protocolo, renueva el ticket en cada reconexión,
+aplica backoff con jitter, reanuda desde cursor y entrega en orden aun si recibe
+eventos duplicados o fuera de secuencia. Webapp y Backoffice usan replay HTTP
+sólo como fallback durante una desconexión; el WebSocket no sustituye la fuente
+durable.
+
 Límites vigentes:
 
 - payload máximo de 64 KiB;
 - backpressure de 256 KiB;
 - máximo 20 canales por conexión;
 - máximo 60 mensajes por minuto por socket;
-- ping cada 25 segundos;
-- cierre si no hay actividad durante 60 segundos.
+- pings nativos de `s42-core`/Bun y cierre por 70 segundos de inactividad;
+- renovación forzada a los cinco minutos para revalidar la sesión;
+- compresión deshabilitada.
 
 ## MongoDB, Models y Storage
 
@@ -392,9 +410,9 @@ Para un cambio de API, validar como mínimo:
 ## Nginx
 
 `nginx/api.example.com` apunta a `127.0.0.1:3822`, reemplaza
-`X-Forwarded-For` con `$remote_addr`, incluye upgrade WebSocket y puede copiarse
-como virtual host independiente a un servidor Nginx compartido. Esa IP de Nginx
-debe figurar en `TRUSTED_PROXIES`.
+`X-Forwarded-For` con `$remote_addr`, incluye upgrade WebSocket, reenvía
+`Sec-WebSocket-Protocol` y puede copiarse como virtual host independiente a un
+servidor Nginx compartido. Esa IP de Nginx debe figurar en `TRUSTED_PROXIES`.
 
 Si se modifica `API_PORT`, `/ws`, límites de body, headers o timeouts, se debe
 actualizar ese archivo en la misma tarea.

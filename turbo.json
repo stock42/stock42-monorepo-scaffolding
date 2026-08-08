@@ -11,6 +11,7 @@
       "persistent": true,
       "env": [
         "API_PORT",
+        "WEBSOCKET_PUBLIC_URL",
         "WEBAPP_PORT",
         "BACKOFFICE_PORT",
         "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
@@ -27,6 +28,7 @@
       "persistent": true,
       "env": [
         "API_PORT",
+        "WEBSOCKET_PUBLIC_URL",
         "WEBAPP_PORT",
         "BACKOFFICE_PORT",
         "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
@@ -50,13 +52,25 @@
       "cache": false,
       "outputs": ["coverage/**"],
       "env": [
+        "NODE_ENV",
+        "API_HOST",
+        "API_PORT",
         "API_TEST_ENABLED",
+        "API_TEST_SEEDS",
         "MONGODB_URI",
         "MONGODB_DB",
         "TEST_TENANT_ID",
         "DEFAULT_ADMIN_BOOTSTRAP_ENABLED",
         "DEFAULT_ADMIN_EMAIL",
-        "DEFAULT_ADMIN_PASSWORD"
+        "DEFAULT_ADMIN_PASSWORD",
+        "AUTH_ACCESS_SECRET",
+        "AUTH_REFRESH_SECRET",
+        "CSRF_SECRET",
+        "WEBSOCKET_TICKET_SECRET",
+        "WEBSOCKET_PUBLIC_URL",
+        "COOKIE_SECURE",
+        "AGENT_INTERNAL_URL",
+        "AGENT_SERVICE_TOKEN"
       ]
     },
     "test:e2e": {

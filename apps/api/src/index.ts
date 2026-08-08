@@ -6,6 +6,7 @@ import { errorResponse } from "@/errors/handler";
 import { corsPreflight, resolveCorsOrigin, withCors } from "@/http/cors";
 import { fileGateway } from "@/modules/files/gateway";
 import { resolveClientIp } from "@/security/client-ip";
+import { stopSharedListener } from "@/websocket/stop-listener";
 
 export type RunningApi = {
   server: Bun.Server<WebSocketData>;
@@ -89,10 +90,10 @@ export async function startApi(): Promise<RunningApi> {
     },
   });
 
-  context.websocket.start();
+  context.websocket.start(server);
   console.info("Stock42 API ready", {
     url: server.url.toString(),
-    websocket: `ws://${config.host}:${server.port}/ws`,
+    websocket: config.websocket.publicUrl,
   });
 
   let closing: Promise<void> | null = null;
@@ -101,8 +102,12 @@ export async function startApi(): Promise<RunningApi> {
     closing = (async () => {
       clearInterval(sweepTimer);
       context.ready = false;
+      const listenerStop = stopSharedListener(
+        server,
+        context.websocket.controllers.getActiveConnections(),
+      );
       context.websocket.stop();
-      await server.stop(true);
+      await listenerStop;
       await context.mongo.close();
       Dependencies.clear();
       console.info("Stock42 API stopped");

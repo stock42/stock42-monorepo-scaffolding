@@ -1,6 +1,7 @@
 import type { AgentRunEvent } from "@stock42/contracts/agent";
 import type { SessionActor } from "@stock42/contracts/auth";
 import {
+  STOCK42_REALTIME_SUBPROTOCOL,
   WebSocketClientMessageSchema,
   type WebSocketServerMessage,
 } from "@stock42/contracts/websocket";
@@ -12,19 +13,40 @@ import type { AuthService } from "@/modules/auth/services/AuthService";
 import { AgentEventBridge } from "./AgentEventBridge";
 import type { WebSocketTicketService } from "./WebSocketTicketService";
 
+const MAX_CHANNELS_PER_SOCKET = 20;
+const MAX_MESSAGES_PER_MINUTE = 60;
+const SOCKET_SESSION_TTL_MS = 5 * 60_000;
+
+type SocketSubscription = {
+  channel: string;
+  topic: string;
+  runId: string;
+  tenantId: string;
+};
+
 export type SocketData = {
   connectionId: string;
   actor: SessionActor;
-  channels: Set<string>;
-  lastSeenAt: number;
+  subscriptions: Map<string, SocketSubscription>;
+  connectedAt: number;
   messageWindowStartedAt: number;
   messagesInWindow: number;
 };
 
+export type WebSocketPublisher = Pick<
+  Bun.Server<Record<string, unknown>>,
+  "publish" | "subscriberCount"
+>;
+
+export function agentRunTopic(tenantId: string, runId: string): string {
+  return `tenant:${tenantId}:agent:run:${runId}`;
+}
+
 export class WebSocketGateway {
   private readonly sockets = new Set<Bun.ServerWebSocket<SocketData>>();
   private readonly bridge: AgentEventBridge;
-  private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private sessionTimer: ReturnType<typeof setInterval> | null = null;
+  private publisher: WebSocketPublisher | null = null;
 
   readonly controllers: WebSocketControllers;
 
@@ -43,44 +65,54 @@ export class WebSocketGateway {
         this.send(socket, {
           type: "ready",
           connectionId: socket.data.connectionId,
+          protocol: STOCK42_REALTIME_SUBPROTOCOL,
         });
       },
       message: (socket, raw) => this.onMessage(socket, raw),
       close: (socket) => {
-        for (const channel of socket.data.channels) this.unsubscribe(socket, channel);
+        for (const subscription of socket.data.subscriptions.values()) {
+          socket.unsubscribe(subscription.topic);
+          this.bridge.untrack(
+            this.subscriptionId(socket, subscription.channel),
+            subscription.runId,
+            subscription.tenantId,
+          );
+        }
+        socket.data.subscriptions.clear();
         this.sockets.delete(socket);
-      },
-      pong: (socket) => {
-        socket.data.lastSeenAt = Date.now();
       },
     });
     this.controllers = new WebSocketControllers([controller], {
       maxPayloadLength: 64 * 1024,
+      idleTimeout: 70,
       backpressureLimit: 256 * 1024,
       closeOnBackpressureLimit: true,
+      publishToSelf: false,
+      sendPings: true,
+      perMessageDeflate: false,
     });
   }
 
-  start(): void {
+  start(publisher: WebSocketPublisher): void {
+    this.publisher = publisher;
     this.bridge.start();
-    if (this.heartbeat) return;
-    this.heartbeat = setInterval(() => {
-      const cutoff = Date.now() - 60_000;
+    if (this.sessionTimer) return;
+    this.sessionTimer = setInterval(() => {
+      const cutoff = Date.now() - SOCKET_SESSION_TTL_MS;
       for (const socket of this.sockets) {
-        if (socket.data.lastSeenAt < cutoff) {
-          socket.close(1001, "Heartbeat timeout");
-        } else {
-          socket.ping();
+        if (socket.data.connectedAt <= cutoff) {
+          socket.close(1008, "Session refresh required");
         }
       }
-    }, 25_000);
+    }, 60_000);
   }
 
   stop(): void {
     this.bridge.stop();
-    if (this.heartbeat) clearInterval(this.heartbeat);
-    this.heartbeat = null;
+    if (this.sessionTimer) clearInterval(this.sessionTimer);
+    this.sessionTimer = null;
     this.controllers.closeAll(1001, "Server shutdown");
+    this.publisher = null;
   }
 
   private async authorizeUpgrade(request: Request) {
@@ -88,19 +120,32 @@ export class WebSocketGateway {
     if (origin && !resolveCorsOrigin(request, this.config.corsOrigins)) {
       return new Response("Origin forbidden", { status: 403 });
     }
-    const ticket = new URL(request.url).searchParams.get("ticket");
-    if (!ticket) return new Response("Ticket required", { status: 401 });
+
+    const offeredProtocols =
+      request.headers
+        .get("sec-websocket-protocol")
+        ?.split(",")
+        .map((value) => value.trim()) ?? [];
+    if (!offeredProtocols.includes(STOCK42_REALTIME_SUBPROTOCOL)) {
+      return new Response("Unsupported WebSocket protocol", { status: 400 });
+    }
+
+    const tickets = new URL(request.url).searchParams.getAll("ticket");
+    if (tickets.length !== 1 || !tickets[0]) {
+      return new Response("Ticket required", { status: 401 });
+    }
     try {
-      const actor = await this.auth.revalidateActor(await this.tickets.consume(ticket));
+      const actor = await this.auth.revalidateActor(await this.tickets.consume(tickets[0]));
       return {
         data: {
           connectionId: crypto.randomUUID(),
           actor,
-          channels: new Set<string>(),
-          lastSeenAt: Date.now(),
+          subscriptions: new Map<string, SocketSubscription>(),
+          connectedAt: Date.now(),
           messageWindowStartedAt: Date.now(),
           messagesInWindow: 0,
         },
+        headers: { "Sec-WebSocket-Protocol": STOCK42_REALTIME_SUBPROTOCOL },
       };
     } catch {
       return new Response("Ticket invalid", { status: 401 });
@@ -111,11 +156,11 @@ export class WebSocketGateway {
     socket: Bun.ServerWebSocket<SocketData>,
     raw: WebSocketMessage,
   ): Promise<void> {
-    socket.data.lastSeenAt = Date.now();
     if (!this.consumeMessageRate(socket)) {
       socket.close(1008, "Rate limit");
       return;
     }
+
     const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
     let payload: unknown;
     try {
@@ -124,6 +169,7 @@ export class WebSocketGateway {
       this.send(socket, { type: "error", code: "INVALID_JSON", message: "Mensaje inválido." });
       return;
     }
+
     const message = WebSocketClientMessageSchema.safeParse(payload);
     if (!message.success) {
       this.send(socket, {
@@ -147,7 +193,10 @@ export class WebSocketGateway {
       });
       return;
     }
-    if (socket.data.channels.size >= 20) {
+    if (
+      !socket.data.subscriptions.has(message.data.channel) &&
+      socket.data.subscriptions.size >= MAX_CHANNELS_PER_SOCKET
+    ) {
       this.send(socket, {
         type: "error",
         requestId: message.data.requestId,
@@ -159,11 +208,26 @@ export class WebSocketGateway {
 
     const runId = message.data.channel.slice("agent:run:".length);
     try {
-      await this.agentClient.getRun(
+      const actor = await this.auth.revalidateActor(socket.data.actor);
+      const tenantId = this.resolveTenantId(actor, message.data.tenantId);
+      await this.agentClient.getRun(runId, tenantId, actor.uuid, actor.role);
+      socket.data.actor = actor;
+
+      const existing = socket.data.subscriptions.get(message.data.channel);
+      if (existing && existing.tenantId !== tenantId) throw new Error("Tenant mismatch");
+      if (!existing) {
+        const topic = agentRunTopic(tenantId, runId);
+        socket.subscribe(topic);
+        const subscription = { channel: message.data.channel, topic, runId, tenantId };
+        socket.data.subscriptions.set(message.data.channel, subscription);
+      }
+      this.bridge.track(
+        this.subscriptionId(socket, message.data.channel),
         runId,
-        socket.data.actor.tenantId ?? "",
-        socket.data.actor.uuid,
-        socket.data.actor.role,
+        tenantId,
+        actor.uuid,
+        actor.role,
+        message.data.cursor ?? 0,
       );
     } catch {
       this.send(socket, {
@@ -174,16 +238,7 @@ export class WebSocketGateway {
       });
       return;
     }
-    if (!socket.data.channels.has(message.data.channel)) {
-      socket.data.channels.add(message.data.channel);
-      this.bridge.track(
-        runId,
-        socket.data.actor.tenantId ?? "",
-        socket.data.actor.uuid,
-        socket.data.actor.role,
-        message.data.cursor ?? 0,
-      );
-    }
+
     this.send(socket, {
       type: "ack",
       requestId: message.data.requestId,
@@ -191,25 +246,47 @@ export class WebSocketGateway {
     });
   }
 
-  private publish(event: AgentRunEvent): void {
-    const channel = `agent:run:${event.runId}`;
-    for (const socket of this.sockets) {
-      if (socket.data.actor.tenantId === event.tenantId && socket.data.channels.has(channel)) {
-        this.send(socket, {
-          type: "event",
-          channel,
-          cursor: event.sequence,
-          payload: { ...event },
-        });
+  private resolveTenantId(actor: SessionActor, requestedTenantId: string | undefined): string {
+    if (actor.tenantId) {
+      if (requestedTenantId && requestedTenantId !== actor.tenantId) {
+        throw new Error("Tenant mismatch");
       }
+      return actor.tenantId;
     }
+    if (actor.role !== "platform_admin" || !requestedTenantId) {
+      throw new Error("Tenant required");
+    }
+    return requestedTenantId;
+  }
+
+  private publish(event: AgentRunEvent): void {
+    const publisher = this.publisher;
+    if (!publisher) return;
+    const topic = agentRunTopic(event.tenantId, event.runId);
+    if (publisher.subscriberCount(topic) === 0) return;
+    const message: WebSocketServerMessage = {
+      type: "event",
+      channel: `agent:run:${event.runId}`,
+      cursor: event.sequence,
+      payload: { ...event },
+    };
+    publisher.publish(topic, JSON.stringify(message), false);
   }
 
   private unsubscribe(socket: Bun.ServerWebSocket<SocketData>, channel: string): void {
-    if (!socket.data.channels.delete(channel)) return;
-    if (channel.startsWith("agent:run:")) {
-      this.bridge.untrack(channel.slice("agent:run:".length));
-    }
+    const subscription = socket.data.subscriptions.get(channel);
+    if (!subscription) return;
+    socket.data.subscriptions.delete(channel);
+    socket.unsubscribe(subscription.topic);
+    this.bridge.untrack(
+      this.subscriptionId(socket, channel),
+      subscription.runId,
+      subscription.tenantId,
+    );
+  }
+
+  private subscriptionId(socket: Bun.ServerWebSocket<SocketData>, channel: string): string {
+    return `${socket.data.connectionId}:${channel}`;
   }
 
   private consumeMessageRate(socket: Bun.ServerWebSocket<SocketData>): boolean {
@@ -219,7 +296,7 @@ export class WebSocketGateway {
       socket.data.messagesInWindow = 0;
     }
     socket.data.messagesInWindow += 1;
-    return socket.data.messagesInWindow <= 60;
+    return socket.data.messagesInWindow <= MAX_MESSAGES_PER_MINUTE;
   }
 
   private send(socket: Bun.ServerWebSocket<SocketData>, message: WebSocketServerMessage): void {

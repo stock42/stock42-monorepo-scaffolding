@@ -150,7 +150,9 @@ consumidores deben etiquetar fixtures con un `testRunId`, limitarlos al
 La API fija `s42-core@3.0.13`. `Modules` descubre
 `src/modules/**/__module__.ts`, `RouteControllers` despacha sus controllers y
 `WebSocketController`/`WebSocketControllers` administran la ruta `/ws`, su
-upgrade y lifecycle nativos. El listener pertenece a la app para compartir:
+upgrade y lifecycle nativos. Las suscripciones y el fan-out usan
+`subscribe`/`unsubscribe`/`publish` de Bun sobre topics derivados por el
+servidor. El listener pertenece a la app para compartir:
 
 - callback HTTP de s42-core;
 - CORS corregido;
@@ -294,6 +296,10 @@ el literal `*` con credenciales. Producción exige una allowlist real,
 `COOKIE_SECURE=true`, rate limit activo, flags de test apagados, secretos
 independientes y no-placeholder, y URL privada del agente.
 `Origin: null` y origins malformados se rechazan.
+
+`WEBSOCKET_PUBLIC_URL` es la URL `ws://` o `wss://` exacta terminada en `/ws`
+que la API entrega junto con cada ticket. Producción exige `wss:` y un hostname
+no-placeholder; no se deriva de headers controlados por el cliente.
 
 `TRUSTED_PROXIES` enumera IPs exactas. La API ignora `X-Forwarded-For` de peers
 no confiables y recorre la cadena validada desde el edge confiable. Nginx
@@ -476,22 +482,28 @@ El baseline no crea una abstracción S3 hasta que un proyecto la necesite.
 `POST /auth/ws-tickets/create` genera un ticket firmado, hasheado en MongoDB,
 con TTL de 60 segundos y consumo atómico de una vez. `/ws` verifica ticket y
 Origin desde el callback `upgrade` del `WebSocketController` antes de que
-s42-core acepte la conexión sobre el mismo listener HTTP.
+s42-core acepte la conexión sobre el mismo listener HTTP. El handshake exige el
+subprotocolo versionado `stock42.realtime.v1`.
 
 El gateway ofrece:
 
 - mensajes Zod;
-- subscribe/unsubscribe;
+- subscribe/unsubscribe nativos por topic server-owned;
 - autorización del run contra el agente;
 - aislamiento tenant;
 - 20 canales por socket;
 - 60 mensajes por minuto;
 - payload de 64 KiB;
 - límite de backpressure;
-- ping/pong y cleanup;
+- pings nativos, idle timeout y cleanup;
 - eventos del agente con cursor.
 
-Después de una reconexión se usa `GET /agent/runs/:id/events?cursor=N`.
+`@stock42/api-client/realtime` obtiene una URL pública y un ticket nuevos para
+cada conexión, aplica backoff con jitter, reanuda cada canal desde su cursor y
+ordena/deduplica eventos. Webapp y Backoffice lo consumen en operación normal;
+si el canal cae, usan temporalmente
+`GET /agent/runs/:id/events?cursor=N` hasta reconectar. Las conexiones se
+renuevan al superar cinco minutos para revalidar la sesión.
 
 ## 15. Tests
 
@@ -530,7 +542,9 @@ Todo cambio de dominio, puerto, path, WebSocket, upload, timeout, health o
 header de proxy exige actualizar Nginx.
 
 Los tres hosts fijan `X-Forwarded-For $remote_addr`; la API sólo lo acepta si la
-IP peer aparece en `TRUSTED_PROXIES`.
+IP peer aparece en `TRUSTED_PROXIES`. El host de API reenvía además
+`Sec-WebSocket-Protocol` para conservar la negociación
+`stock42.realtime.v1`.
 
 ## 17. CI
 

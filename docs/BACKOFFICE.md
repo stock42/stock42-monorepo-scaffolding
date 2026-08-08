@@ -71,7 +71,7 @@ una diferencia de UX.
 | `/tenants`      | `platform_admin`                   | Directorio y alta de tenants.     |
 | `/tenants/[id]` | `platform_admin`                   | Operadores y usuarios del tenant. |
 | `/people`       | `tenant_owner` o `tenant_operator` | Personas del tenant de la sesión. |
-| `/agent`        | Administrador u operador           | Agente durable por HTTP.          |
+| `/agent`        | Administrador u operador           | Agente durable en tiempo real.    |
 | `/telegram-ai`  | `platform_admin` o `tenant_owner`  | CRUD de IDs Telegram autorizados. |
 
 `app/(protected)/layout.tsx` exige un actor cuyo `kind` no sea `user`.
@@ -157,7 +157,7 @@ El owner inicial tiene `role=owner`; los operadores adicionales tienen
 
 ## Agente AI
 
-`BackofficeAgentPanel` es la interfaz HTTP del runtime durable.
+`BackofficeAgentPanel` es la interfaz en tiempo real del runtime durable.
 
 Para un `platform_admin`:
 
@@ -175,15 +175,16 @@ Flujo de ejecución:
 2. crea un run con manifest `assistant`;
 3. genera una idempotency key;
 4. conserva el `conversationId` para mensajes siguientes;
-5. consulta estado y eventos con cursor;
-6. refresca cada 1,5 segundos mientras el run está activo;
-7. reintenta cada 3 segundos después de un error;
+5. obtiene un ticket de un uso y abre el WebSocket público con el subprotocolo
+   versionado;
+6. se suscribe al run desde el cursor durable y actualiza estado y eventos;
+7. usa replay HTTP cada 3 segundos sólo mientras el canal se reconecta;
 8. muestra respuesta, estado e intento;
 9. permite cancelar;
 10. detecta `confirmation.required` y muestra tool, destino, tenant y preview
     server-owned cuando están disponibles;
 11. permite aprobar o rechazar sin permitir editar los argumentos;
-12. deja de consultar al llegar a un estado terminal.
+12. cierra el cliente al llegar a un estado terminal.
 
 Estados terminales:
 
@@ -194,8 +195,10 @@ Estados terminales:
 - `killed`;
 - `crashed`.
 
-La pantalla usa replay HTTP. La API tiene WebSocket, pero este componente no lo
-usa todavía.
+El cliente compartido renueva el ticket en cada reconexión, aplica backoff con
+jitter, reanuda el canal, deduplica y ordena eventos. Un `platform_admin` envía
+el tenant seleccionado al suscribirse; el servidor vuelve a autorizar ese run
+antes de derivar el topic nativo.
 
 La autorización final no depende del panel: `tenant_operator` sólo opera runs y
 confirmations propios; `tenant_owner` puede administrar recursos del tenant y
@@ -255,13 +258,14 @@ El helper `lib/api-proxy.ts`:
 
 ### Auth
 
-| Método | Route Handler       | Upstream        |
-| ------ | ------------------- | --------------- |
-| `POST` | `/api/auth/csrf`    | `/auth/csrf`    |
-| `POST` | `/api/auth/login`   | `/auth/login`   |
-| `POST` | `/api/auth/logout`  | `/auth/logout`  |
-| `GET`  | `/api/auth/me`      | `/auth/me`      |
-| `POST` | `/api/auth/refresh` | `/auth/refresh` |
+| Método | Route Handler                 | Upstream                  |
+| ------ | ----------------------------- | ------------------------- |
+| `POST` | `/api/auth/csrf`              | `/auth/csrf`              |
+| `POST` | `/api/auth/login`             | `/auth/login`             |
+| `POST` | `/api/auth/logout`            | `/auth/logout`            |
+| `GET`  | `/api/auth/me`                | `/auth/me`                |
+| `POST` | `/api/auth/refresh`           | `/auth/refresh`           |
+| `POST` | `/api/auth/ws-tickets/create` | `/auth/ws-tickets/create` |
 
 ### Plataforma y personas
 

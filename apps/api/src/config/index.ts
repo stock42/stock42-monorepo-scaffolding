@@ -1,4 +1,5 @@
 import { EmailSchema } from "@stock42/contracts/common";
+import { WebSocketPublicUrlSchema } from "@stock42/contracts/websocket";
 import { isIP } from "node:net";
 import { z } from "zod";
 
@@ -56,6 +57,7 @@ const ApiConfigSchema = z
     AUTH_REFRESH_SECRET: z.string().min(32),
     CSRF_SECRET: z.string().min(32),
     WEBSOCKET_TICKET_SECRET: z.string().min(32),
+    WEBSOCKET_PUBLIC_URL: WebSocketPublicUrlSchema.default("ws://127.0.0.1:3822/ws"),
     CORS_ORIGINS: z.string().default("*"),
     COOKIE_SECURE: BooleanStringSchema,
     ACCESS_TOKEN_TTL_SECONDS: PositiveIntegerSchema("900"),
@@ -106,6 +108,17 @@ const ApiConfigSchema = z
     }
     if (!value.COOKIE_SECURE) {
       context.addIssue({ code: "custom", path: ["COOKIE_SECURE"], message: "Required" });
+    }
+    const publicWebSocketUrl = new URL(value.WEBSOCKET_PUBLIC_URL);
+    if (
+      publicWebSocketUrl.protocol !== "wss:" ||
+      looksLikePlaceholder(publicWebSocketUrl.hostname)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["WEBSOCKET_PUBLIC_URL"],
+        message: "Production WebSocket URL must use wss and a real hostname",
+      });
     }
     if (value.API_TEST_ENABLED || value.API_TEST_SEEDS) {
       context.addIssue({ code: "custom", path: ["API_TEST_ENABLED"], message: "Forbidden" });
@@ -158,6 +171,9 @@ const ApiConfigSchema = z
       accessTtlSeconds: value.ACCESS_TOKEN_TTL_SECONDS,
       refreshTtlSeconds: value.REFRESH_TOKEN_TTL_SECONDS,
       secureCookies: value.COOKIE_SECURE,
+    },
+    websocket: {
+      publicUrl: value.WEBSOCKET_PUBLIC_URL,
     },
     corsOrigins: value.CORS_ORIGINS.split(",")
       .map((origin) => origin.trim())

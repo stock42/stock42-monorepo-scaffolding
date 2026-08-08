@@ -114,6 +114,7 @@ const httpUrlKeys = new Set([
   "DEEPSEEK_BASE_URL",
   "TELEGRAM_API_BASE_URL",
 ]);
+const webSocketUrlKeys = new Set(["WEBSOCKET_PUBLIC_URL"]);
 
 function randomSecret(): string {
   return randomBytes(32).toString("base64url");
@@ -145,6 +146,8 @@ export function buildScenarioDefaults(
       AUTH_REFRESH_SECRET: createSecret(),
       CSRF_SECRET: createSecret(),
       WEBSOCKET_TICKET_SECRET: createSecret(),
+      WEBSOCKET_PUBLIC_URL:
+        scenario === "production" ? "wss://api.example.com/ws" : "ws://127.0.0.1:3822/ws",
       CORS_ORIGINS: corsOrigins,
       COOKIE_SECURE: scenario === "production" ? "true" : "false",
       ACCESS_TOKEN_TTL_SECONDS: "900",
@@ -394,6 +397,23 @@ function validationError(key: string, value: string, values: AppEnvValues): stri
       if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
     } catch {
       return "Ingresá una URL HTTP o HTTPS válida.";
+    }
+  }
+  if (webSocketUrlKeys.has(key)) {
+    try {
+      const url = new URL(value);
+      if (
+        (url.protocol !== "ws:" && url.protocol !== "wss:") ||
+        url.pathname !== "/ws" ||
+        url.username !== "" ||
+        url.password !== "" ||
+        url.search !== "" ||
+        url.hash !== ""
+      ) {
+        throw new Error();
+      }
+    } catch {
+      return "Ingresá una URL ws:// o wss:// válida, terminada en /ws y sin query.";
     }
   }
   if (key === "DEEPSEEK_MODEL" && value !== "deepseek-v4-pro") {

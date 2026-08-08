@@ -1,10 +1,32 @@
 import { z } from "zod";
 import { UuidSchema, createSuccessSchema } from "./common";
 
+export const STOCK42_REALTIME_SUBPROTOCOL = "stock42.realtime.v1";
+
+export const WebSocketPublicUrlSchema = z.string().refine(
+  (value) => {
+    try {
+      const url = new URL(value);
+      return (
+        (url.protocol === "ws:" || url.protocol === "wss:") &&
+        url.pathname === "/ws" &&
+        url.username === "" &&
+        url.password === "" &&
+        url.search === "" &&
+        url.hash === ""
+      );
+    } catch {
+      return false;
+    }
+  },
+  { message: "Expected a ws:// or wss:// URL ending in /ws without credentials or query" },
+);
+
 export const WebSocketTicketResponseSchema = createSuccessSchema(
   z.object({
     ticket: z.string().min(32),
     expiresAt: z.string().datetime({ offset: true }),
+    webSocketUrl: WebSocketPublicUrlSchema,
   }),
 );
 
@@ -14,6 +36,7 @@ export const WebSocketClientMessageSchema = z.discriminatedUnion("type", [
     requestId: z.string().min(1).max(100),
     channel: z.string().regex(/^agent:run:[0-9a-f-]{36}$/),
     cursor: z.number().int().nonnegative().optional(),
+    tenantId: UuidSchema.optional(),
   }),
   z.object({
     type: z.literal("unsubscribe"),
@@ -30,6 +53,7 @@ export const WebSocketServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("ready"),
     connectionId: UuidSchema,
+    protocol: z.literal(STOCK42_REALTIME_SUBPROTOCOL),
   }),
   z.object({
     type: z.literal("ack"),

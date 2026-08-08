@@ -32,17 +32,13 @@ cuatro apps desplegables, packages compartidos, API modular con `s42-core`,
 MongoDB, contratos Zod, Next.js App Router, shadcn centralizado, agente durable y
 WebSocket dentro de la API.
 
-La actualización pedida de WebSocket ya está presente: la API usa
-`s42-core@3.0.13`, registra `/ws` con `WebSocketController` y
-`WebSocketControllers`, conserva un único `Bun.serve` y tiene pruebas de
-handshake. La siguiente etapa no es otra migración de framework, sino completar
-el uso nativo de WebSocket de extremo a extremo:
-
-1. conectar webapp y backoffice al gateway;
-2. reemplazar el polling visible al usuario;
-3. usar topics nativos para suscripciones y publicación;
-4. reducir el polling API → agente a un stream o endpoint batch autenticado;
-5. agregar reconexión, replay y observabilidad.
+La actualización de WebSocket quedó completada sobre `s42-core@3.0.13`: la API
+registra `/ws` con `WebSocketController` y `WebSocketControllers`, conserva un
+único `Bun.serve`, negocia un subprotocolo versionado y usa topics nativos de
+Bun para suscripción y publicación. Webapp y Backoffice comparten un cliente
+tipado con ticket renovable, reconexión, replay, orden y deduplicación. El único
+trabajo relacionado que permanece en este roadmap es optimizar la ingestión
+interna API → agente y sumar observabilidad de producción.
 
 Antes de ampliar producto existen ocho frentes prioritarios:
 
@@ -321,22 +317,23 @@ Propuesta:
 
 **Superficies:** webapp, backoffice, api-client, contracts, API y Nginx.
 
-La API ya es nativa en `s42-core`, pero ninguna UI abre `/ws`. La webapp solo
-crea el run y muestra su UUID; el backoffice consulta run y eventos cada 1,5
-segundos.
+**Estado:** completado el 2026-08-08.
 
-Propuesta:
+Cierre implementado:
 
-- agregar a `@stock42/api-client` un cliente browser tipado;
-- obtener ticket de un uso por BFF y conectar mediante una URL pública
+- se agregó a `@stock42/api-client` un cliente browser tipado;
+- se obtiene un ticket de un uso por BFF y se conecta mediante una URL pública
   explícitamente configurada;
-- suscribir `agent:run:<uuid>` con cursor durable;
-- soportar ack, eventos, heartbeat, backoff con jitter, renovación de ticket,
+- se suscribe `agent:run:<uuid>` con cursor durable;
+- se soportan ack, eventos, pings nativos, backoff con jitter, renovación de ticket,
   replay tras reconexión y cierre al completar el run;
-- usar polling solo como fallback acotado;
-- mostrar estado, progreso, respuesta, artifacts y errores recuperables;
-- probar reconexión, evento duplicado, cursor atrasado, backpressure y
+- el polling quedó limitado a un fallback acotado;
+- se muestran estado, progreso, respuesta y errores recuperables;
+- se probaron reconexión, evento duplicado, cursor atrasado, publicación por topic y
   aislamiento tenant.
+
+Artifacts y confirmations completos de la Webapp conservan sus ítems de
+producto propios; no bloquean el transporte realtime.
 
 ### NE-RT-002 — Topics nativos de `s42-core`/Bun
 
@@ -344,18 +341,16 @@ Propuesta:
 
 **Superficies:** API y tests.
 
-El lifecycle ya usa controllers nativos, pero las suscripciones se mantienen en
-un `Set` propio y cada evento itera todos los sockets. `s42-core@3.0.13` expone
-las APIs nativas de topics/subscriptions y publicación de Bun.
+**Estado:** completado el 2026-08-08.
 
-Propuesta:
+Cierre implementado:
 
-- suscribir el socket al topic autorizado después de validar el run;
-- desuscribir por topic al cerrar o recibir `unsubscribe`;
-- publicar una única vez por topic desde el listener compartido;
-- conservar tenant y autorización fuera del nombre controlado por el cliente;
-- usar métricas de controllers/subscribers sin exponer topics ni payloads;
-- corregir el caso donde una resuscripción existente es rechazada al llegar al
+- el socket se suscribe al topic autorizado después de validar el run;
+- se desuscribe por topic al cerrar o recibir `unsubscribe`;
+- se publica una única vez por topic desde el listener compartido;
+- tenant y autorización quedan fuera del nombre controlado por el cliente;
+- se consulta el número de subscribers sin exponer topics ni payloads;
+- se corrigió el caso donde una resuscripción existente era rechazada al llegar al
   límite de 20 canales.
 
 ### NE-RT-003 — Bridge API → agente eficiente
@@ -364,18 +359,18 @@ Propuesta:
 
 **Superficies:** API, agente y contratos internos.
 
-`AgentEventBridge` ejecuta una consulta HTTP por run suscripto y por segundo,
-en secuencia, silencia errores y usa un actor UUID sintético. Esto escala con el
-número de runs activos y dificulta atribución y observabilidad.
+`AgentEventBridge` ejecuta una consulta HTTP por run suscripto y por segundo, en
+secuencia, y reintenta sin telemetría. Ya conserva los principals reales de los
+suscriptores y prueba otro principal autorizado si uno pierde acceso, pero el
+costo sigue escalando con el número de runs activos.
 
 Propuesta incremental, sin mover WebSocket fuera de la API:
 
-1. reemplazar el actor sintético por un principal interno explícito;
-2. agregar un endpoint batch de múltiples cursores o un stream HTTP interno
+1. agregar un endpoint batch de múltiples cursores o un stream HTTP interno
    autenticado;
-3. aplicar backoff, límites, métricas y logs de reconexión;
-4. mantener replay desde MongoDB como fuente durable;
-5. documentar el mecanismo de fan-out si en el futuro hay más de una API.
+2. aplicar backoff, límites, métricas y logs de reconexión;
+3. mantener replay desde MongoDB como fuente durable;
+4. documentar el mecanismo de fan-out si en el futuro hay más de una API.
 
 ### NE-WEB-001 — Workspace agéntico completo para usuarios
 
@@ -383,8 +378,10 @@ Propuesta incremental, sin mover WebSocket fuera de la API:
 
 **Superficies:** webapp, API, agente y contracts.
 
-La webapp actual no permite seguir un run, leer la respuesta, retomar una
-conversación, adjuntar archivos ni descargar artifacts.
+La webapp ya sigue un run en tiempo real, muestra su respuesta, permite
+cancelarlo y conserva la conversación durante la sesión. Para convertirse en
+un workspace completo todavía necesita historial recuperable, recarga del run
+activo, archivos, artifacts y estados de interacción más ricos.
 
 Propuesta:
 
@@ -893,20 +890,20 @@ inventar nombres/credenciales.
 
 ## 9. Mapa por superficie
 
-| Superficie        | Situación actual                                      | Próximo resultado recomendado                              |
-| ----------------- | ----------------------------------------------------- | ---------------------------------------------------------- |
-| `apps/api`        | HTTP/WS, auth activa, resource policy y trusted proxy | Métricas y health real                                     |
-| `apps/agent`      | Runtime cercado, effects durables, tools y Telegram   | Cola justa, contexto acotado y telemetría                  |
-| `apps/webapp`     | Login, shell y creación de run                        | Workspace realtime, conversaciones, uploads y artifacts    |
-| `apps/backoffice` | Tenants, personas, agente y Telegram AI básicos       | Operación real, audit, approvals e identity lifecycle      |
-| `contracts`       | Contratos base Zod                                    | Recursos listables, policies, errores y realtime completos |
-| `api-client`      | Request JSON y forwarding de respuesta                | Cliente WS, streaming, timeout y error decoder             |
-| `ui`              | Catálogo shadcn compartido                            | Shell responsive y pruebas accesibles de piezas críticas   |
-| Config packages   | Strict TS y lint compartido                           | Mantener simples; agregar reglas solo por fallos reales    |
-| Scripts/Turbo     | Launchers, env CLI y boundaries por ownership         | Affected/coverage y diagnóstico                            |
-| CI                | Pipeline, audit y secret scan fail-closed             | Ampliar escenarios críticos                                |
-| Nginx             | Tres vhosts autónomos con forwarding confiable        | Separar `/ws` y alinear límites                            |
-| Docs              | Guías, policy y runbooks por superficie               | Referencias verificables y operación de features P1        |
+| Superficie        | Situación actual                                      | Próximo resultado recomendado                            |
+| ----------------- | ----------------------------------------------------- | -------------------------------------------------------- |
+| `apps/api`        | HTTP/WS, auth activa, resource policy y trusted proxy | Métricas y health real                                   |
+| `apps/agent`      | Runtime cercado, effects durables, tools y Telegram   | Cola justa, contexto acotado y telemetría                |
+| `apps/webapp`     | Login, run conversacional, respuesta y WebSocket      | Historial, uploads, artifacts y workspace completo       |
+| `apps/backoffice` | Tenants, personas, agente y Telegram AI básicos       | Operación real, audit, approvals e identity lifecycle    |
+| `contracts`       | Contratos HTTP y realtime versionado                  | Recursos listables, policies y errores completos         |
+| `api-client`      | HTTP/BFF y cliente WebSocket browser                  | Streaming interno, timeout y error decoder               |
+| `ui`              | Catálogo shadcn compartido                            | Shell responsive y pruebas accesibles de piezas críticas |
+| Config packages   | Strict TS y lint compartido                           | Mantener simples; agregar reglas solo por fallos reales  |
+| Scripts/Turbo     | Launchers, env CLI y boundaries por ownership         | Affected/coverage y diagnóstico                          |
+| CI                | Pipeline, audit y secret scan fail-closed             | Ampliar escenarios críticos                              |
+| Nginx             | Tres vhosts autónomos con forwarding confiable        | Separar `/ws` y alinear límites                          |
+| Docs              | Guías, policy y runbooks por superficie               | Referencias verificables y operación de features P1      |
 
 ## 10. Secuencia recomendada
 

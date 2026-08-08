@@ -45,8 +45,8 @@ flowchart LR
   O[Operador] --> B[Backoffice Next.js]
   W -->|BFF / cookies HttpOnly| API[API Bun + s42-core]
   B -->|BFF / cookies HttpOnly| API
-  W -.->|cliente /ws pendiente| API
-  B -.->|cliente /ws pendiente| API
+  W ==>|ticket de un uso + /ws| API
+  B ==>|ticket de un uso + /ws| API
   API -->|MongoDB driver nativo| DB[(MongoDB)]
   API -->|HTTP interno firmado| AG[Agent runtime privado]
   AG --> DB
@@ -82,7 +82,8 @@ sequenceDiagram
     API->>RT: decisión autorizada
   end
   RT->>DB: eventos, mensajes y artifacts
-  API-->>UI: polling/replay o WebSocket
+  API-->>UI: eventos WebSocket por topic nativo
+  UI->>API: replay HTTP por cursor si el canal cae
 ```
 
 Cada run tiene estado durable. El launcher limita concurrencia global y por
@@ -97,9 +98,9 @@ memoria de un único proceso.
 | Identidad y tenancy | Bootstrap opcional de plataforma, tenants, personas y roles `platform_admin`, `tenant_owner`, `tenant_operator` y `tenant_user`                         |
 | Autenticación       | Access/refresh HttpOnly, revalidación de identidad/tenant, rotación de refresh, CSRF, CORS y rate limiting                                              |
 | API                 | Módulos por capacidad, contratos Zod, documentos MongoDB planos, Models y storages delgados, boot e índices idempotentes                                |
-| Tiempo real         | `/ws` sobre `WebSocketController`/`WebSocketControllers` nativos de `s42-core`, ticket de un uso, aislamiento por tenant, heartbeat y replay            |
-| Webapp              | Login tenant-aware, sesión BFF y creación de runs desde una experiencia Next.js para usuario final                                                      |
-| Backoffice          | Login de plataforma/tenant, gestión de tenants y personas, panel de agente, polling de eventos, cancelaciones, confirmations y CRUD de accesos Telegram |
+| Tiempo real         | `/ws` sobre controllers y topics nativos de `s42-core`/Bun, subprotocolo versionado, ticket de un uso, aislamiento tenant, reconexión y replay          |
+| Webapp              | Login tenant-aware, sesión BFF, runs conversacionales, seguimiento WebSocket, respuesta, replay y cancelación                                           |
+| Backoffice          | Login de plataforma/tenant, gestión de tenants y personas, agente en tiempo real, cancelaciones, confirmations y CRUD de accesos Telegram               |
 | Runtime agéntico    | Cola durable, procesos cercados, abort, supervisor con grace, registro idempotente de efectos, cancelación y `deepseek-v4-pro`                          |
 | Tools               | Contexto y fecha, uploads por owner, CSV anti-fórmula, PDF, artifacts y Telegram sólo a destinos server-owned con confirmation preview                  |
 | Archivos            | Uploads y artifacts con metadata en MongoDB, bytes fuera de la base y descarga autorizada                                                               |
@@ -118,10 +119,9 @@ memoria de un único proceso.
   `deepseek-v4-pro`.
 - Los uploads y artifacts usan filesystem local en esta etapa; object storage
   y operación multi-instancia pertenecen a la evolución P3.
-- La interfaz actual de la webapp crea runs, pero todavía debe completar la
-  experiencia de seguimiento y respuesta. El backoffice consume eventos por
-  polling HTTP aunque el gateway WebSocket ya existe. Estos trabajos están
-  definidos en [NEWERA.md](./NEWERA.md).
+- Webapp y Backoffice usan WebSocket en operación normal y replay HTTP acotado
+  mientras el canal se reconecta. El WebSocket acelera la entrega; MongoDB y el
+  endpoint de eventos por cursor siguen siendo la fuente durable.
 
 ## Stack técnico
 
@@ -334,6 +334,8 @@ En producción:
 - API y agente ejecutan TypeScript con Bun sin generar `dist`;
 - `COOKIE_SECURE`, CORS, secretos y URLs internas deben configurarse de forma
   estricta; el proceso falla al arrancar si conserva defaults inseguros;
+- `WEBSOCKET_PUBLIC_URL` debe apuntar al endpoint público `wss://.../ws` que
+  reciben los clientes al emitir un ticket;
 - `TRUSTED_PROXIES` debe enumerar las IP exactas del reverse proxy;
 - health, límites de body, timeouts y proxy WebSocket deben validarse contra la
   infraestructura real.

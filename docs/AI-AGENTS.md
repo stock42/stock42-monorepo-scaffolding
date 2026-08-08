@@ -419,12 +419,14 @@ El token se sanea de mensajes de error y nunca debe aparecer en logs.
 El agente puede invocarse por:
 
 - Webapp: HTTP BFF → API → agente;
-- Backoffice: HTTP BFF → API → agente, con replay y confirmations;
+- Backoffice: HTTP BFF → API → agente, con WebSocket, replay y confirmations;
 - Telegram: `getUpdates` → agente, usando accesos administrados por la API.
 
-La API también ofrece WebSocket para eventos. La interfaz actual del Backoffice
-usa polling HTTP con cursor; no documentar esa pantalla como cliente WebSocket
-hasta que se implemente esa integración.
+Webapp y Backoffice reciben eventos normalmente por el WebSocket nativo de la
+API y usan replay HTTP por cursor como fallback durable durante una reconexión.
+El bridge API → agente todavía obtiene los eventos desde el endpoint interno
+autenticado por cursor; convertir esa ingestión en batch o stream es una mejora
+de escalabilidad, no una dependencia del cliente público.
 
 ## Desarrollo de una tool
 

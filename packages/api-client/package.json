@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./realtime": "./src/realtime.ts",
     "./server": "./src/server.ts"
   },
   "scripts": {

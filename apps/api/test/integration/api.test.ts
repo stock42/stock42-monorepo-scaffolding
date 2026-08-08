@@ -12,7 +12,11 @@ import {
   UserListResponseSchema,
   UserResponseSchema,
 } from "@stock42/contracts/tenancy";
-import { WebSocketServerMessageSchema } from "@stock42/contracts/websocket";
+import {
+  STOCK42_REALTIME_SUBPROTOCOL,
+  WebSocketServerMessageSchema,
+  WebSocketTicketResponseSchema,
+} from "@stock42/contracts/websocket";
 import type { RunningApi } from "@/index";
 import { getAppContext } from "@/context";
 
@@ -92,7 +96,7 @@ async function receiveFirstWebSocketMessage(url: URL): Promise<{
   data: unknown;
 }> {
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(url);
+    const socket = new WebSocket(url, STOCK42_REALTIME_SUBPROTOCOL);
     const timeout = setTimeout(() => {
       socket.close();
       reject(new Error("Timeout esperando el primer mensaje WebSocket."));
@@ -361,12 +365,8 @@ describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
     expect(forbidden.status).toBe(403);
 
     const ticketResponse = await mutate(baseUrl, adminJar, "/auth/ws-tickets/create");
-    const ticketPayload = (await jsonBody(ticketResponse)) as {
-      data?: { ticket?: string };
-    };
-    const ticket = ticketPayload.data?.ticket;
-    expect(ticket).toBeString();
-    if (!ticket) throw new Error("Ticket no generado.");
+    const ticketPayload = WebSocketTicketResponseSchema.parse(await jsonBody(ticketResponse));
+    const ticket = ticketPayload.data.ticket;
     await getAppContext()
       .mongo.getDB()
       .collection("websocket_tickets")
@@ -374,7 +374,10 @@ describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
     const websocketUrl = new URL(`/ws?ticket=${encodeURIComponent(ticket)}`, baseUrl);
     websocketUrl.protocol = websocketUrl.protocol === "https:" ? "wss:" : "ws:";
     const websocket = await receiveFirstWebSocketMessage(websocketUrl);
-    expect(WebSocketServerMessageSchema.parse(websocket.data).type).toBe("ready");
+    expect(WebSocketServerMessageSchema.parse(websocket.data)).toMatchObject({
+      type: "ready",
+      protocol: STOCK42_REALTIME_SUBPROTOCOL,
+    });
     websocket.socket.close();
     await expect(getAppContext().tickets.consume(ticket)).rejects.toThrow();
 

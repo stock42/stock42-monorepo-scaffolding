@@ -39,7 +39,9 @@ export class WebSocketTicketService {
     ]);
   }
 
-  async create(actor: SessionActor): Promise<{ ticket: string; expiresAt: string }> {
+  async create(
+    actor: SessionActor,
+  ): Promise<{ ticket: string; expiresAt: string; webSocketUrl: string }> {
     const expiresAt = new Date(Date.now() + 60_000);
     const payload: TicketPayload = {
       nonce: crypto.randomUUID(),
@@ -59,7 +61,11 @@ export class WebSocketTicketService {
       createdAt: new Date(),
       usedAt: null,
     });
-    return { ticket, expiresAt: expiresAt.toISOString() };
+    return {
+      ticket,
+      expiresAt: expiresAt.toISOString(),
+      webSocketUrl: this.config.websocket.publicUrl,
+    };
   }
 
   async consume(ticket: string): Promise<SessionActor> {

@@ -229,7 +229,7 @@ Además se debe ensayar:
 
 - bootstrap del administrador y logins de plataforma/tenant;
 - aislamiento entre dos tenants;
-- handshake WebSocket, ticket de un uso y replay;
+- handshake versionado, ticket de un uso, topics nativos, reconexión y replay;
 - creación, cancelación, timeout, retry y recuperación de runs;
 - confirmation aprobada, rechazada y vencida;
 - upload, artifact y descarga fuera de scope;

@@ -49,6 +49,9 @@ describe("update:env", () => {
       values.api.DEFAULT_ADMIN_EMAIL = "ADMIN@EXAMPLE.COM";
       values.api.DEFAULT_ADMIN_PASSWORD = "a-secure-password";
       if (scenario === "production") values.api.CORS_ORIGINS = "https://app.acme.test";
+      if (scenario === "production") {
+        values.api.WEBSOCKET_PUBLIC_URL = "wss://api.acme.test/ws";
+      }
       values.agent.DEEPSEEK_API_KEY = "provider-live-key-for-production-tests";
       expect(loadConfig(values.api).defaultAdministrator.email).toBe("admin@example.com");
       expect(() => loadAgentConfig(values.agent)).not.toThrow();
@@ -75,10 +78,13 @@ describe("update:env", () => {
     );
     values.api.CORS_ORIGINS = "*";
     values.api.COOKIE_SECURE = "false";
+    values.api.WEBSOCKET_PUBLIC_URL = "ws://127.0.0.1:3822/ws";
     values.agent.AGENT_HOST = "0.0.0.0";
     values.agent.DEEPSEEK_API_KEY = "replace-with-provider-key";
 
-    expect(() => loadConfig(values.api)).toThrow(/CORS_ORIGINS, COOKIE_SECURE/);
+    expect(() => loadConfig(values.api)).toThrow(
+      /CORS_ORIGINS, COOKIE_SECURE, WEBSOCKET_PUBLIC_URL/,
+    );
     expect(() => loadAgentConfig(values.agent)).toThrow(/AGENT_HOST, DEEPSEEK_API_KEY/);
     expect(() => validateGeneratedConfiguration(values)).toThrow();
   });

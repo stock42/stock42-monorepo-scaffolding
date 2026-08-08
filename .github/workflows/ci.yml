@@ -131,6 +131,7 @@ jobs:
         env:
           API_HOST: 127.0.0.1
           API_PORT: "4400"
+          WEBSOCKET_PUBLIC_URL: ws://127.0.0.1:4400/ws
           AGENT_INTERNAL_URL: http://127.0.0.1:4100
         run: bun run test:api
 
@@ -145,6 +146,7 @@ jobs:
         env:
           API_HOST: 127.0.0.1
           API_PORT: "3822"
+          WEBSOCKET_PUBLIC_URL: ws://127.0.0.1:3822/ws
           AGENT_HOST: 127.0.0.1
           AGENT_PORT: "4100"
           AGENT_INTERNAL_URL: http://127.0.0.1:4100

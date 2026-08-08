@@ -1236,9 +1236,12 @@ Flujo:
 
 1. El cliente autenticado solicita
    `POST /auth/ws-tickets/create`.
-2. La API crea un ticket firmado, de vida corta y uso único.
-3. El cliente conecta a `/ws` con el ticket.
-4. El upgrade valida firma, expiración, origin, actor, tenant y consumo único.
+2. La API crea un ticket firmado, de vida corta y uso único, y responde la URL
+   pública configurada.
+3. El cliente conecta a `/ws` con el ticket y el subprotocolo
+   `stock42.realtime.v1`.
+4. El upgrade valida firma, expiración, origin, protocolo, actor, tenant y
+   consumo único.
 5. El servidor adjunta contexto autorizado a la conexión.
 
 Los tickets consumidos se registran de forma atómica. Si se usa TTL en Mongo,
@@ -1248,10 +1251,10 @@ autenticación general.
 ### 20.2 Capacidades
 
 - schemas Zod para todos los mensajes;
-- subscribe y unsubscribe por canales autorizados;
+- subscribe y unsubscribe nativos por topics derivados por el servidor;
 - aislamiento tenant;
 - canales de progreso del agente;
-- ping/pong y detección de conexiones muertas;
+- pings nativos y detección de conexiones muertas;
 - límites de payload;
 - backpressure y límite de cola;
 - rate limit de mensajes y suscripciones;
@@ -1264,7 +1267,9 @@ autenticación general.
 - replay durable por cursor mediante HTTP/MongoDB.
 
 El WebSocket no es fuente de verdad. Después de una reconexión, el cliente usa
-el cursor para recuperar eventos faltantes.
+el cursor para recuperar eventos faltantes. El cliente compartido renueva el
+ticket, aplica backoff con jitter y ordena/deduplica eventos; Webapp y
+Backoffice usan replay HTTP sólo mientras el canal está desconectado.
 
 ## 21. Nginx
 
