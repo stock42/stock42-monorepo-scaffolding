@@ -250,7 +250,8 @@ completa. Reclama entradas mediante `findOneAndUpdate`, asigna lease, reintenta
 con backoff y nunca marca `sent` antes de la confirmación del transporte. Stop
 de campaña cambia primero el estado de la campaña y luego detiene entradas
 pendientes; un worker que observe una campaña terminal libera su lease como
-`stopped`.
+`stopped`. Un envío que ya alcanzó SMTP no es revocable, pero su finalización no
+puede sobrescribir el estado `stopped` de la campaña.
 
 ## Autenticación y autorización
 

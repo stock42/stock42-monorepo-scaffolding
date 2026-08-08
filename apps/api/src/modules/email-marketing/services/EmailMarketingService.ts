@@ -1,5 +1,6 @@
 import type {
   EmailCampaign,
+  EmailCampaignStatus,
   EmailCampaignSummary,
   EmailSpoolerEntry,
 } from "@stock42/contracts/email-marketing";
@@ -42,6 +43,16 @@ export function renderEmailTemplate(
     const value = values[key as keyof typeof values] ?? "";
     return html ? escapeHtml(value) : value;
   });
+}
+
+export function resolveCampaignTerminalStatus(
+  currentStatus: EmailCampaignStatus,
+  summary: EmailCampaignSummary,
+): EmailCampaignStatus | null {
+  if (currentStatus === "stopped" || summary.pending > 0 || summary.processing > 0) return null;
+  if (summary.sent > 0) return "completed";
+  if (summary.failed > 0) return "failed";
+  return "stopped";
 }
 
 function publicSpooler(document: EmailSpoolerDocument): EmailSpoolerEntry {
@@ -344,9 +355,11 @@ export class EmailMarketingService {
   }
 
   private async refreshCampaign(campaignId: string, tenantId: string): Promise<void> {
+    const campaign = await this.storages.campaigns.findByUuid(campaignId, tenantId);
+    if (!campaign) return;
     const summary: EmailCampaignSummary = await this.storages.spooler.summary(campaignId);
-    if (summary.pending > 0 || summary.processing > 0) return;
-    const status = summary.sent > 0 ? "completed" : summary.failed > 0 ? "failed" : "stopped";
+    const status = resolveCampaignTerminalStatus(campaign.status, summary);
+    if (!status) return;
     await this.storages.campaigns.setStatus(campaignId, tenantId, status);
   }
 }

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { loadConfig } from "@/config";
-import { renderEmailTemplate } from "@/modules/email-marketing/services/EmailMarketingService";
+import {
+  renderEmailTemplate,
+  resolveCampaignTerminalStatus,
+} from "@/modules/email-marketing/services/EmailMarketingService";
 
 function environment(overrides: Record<string, string> = {}): Record<string, string> {
   return {
@@ -52,5 +55,18 @@ describe("email marketing", () => {
     expect(config.email.enabled).toBe(true);
     expect(config.email.configured).toBe(true);
     expect(config.email.from).toBe("news@example.com");
+  });
+
+  test("preserves a stopped campaign when an in-flight email finishes", () => {
+    expect(
+      resolveCampaignTerminalStatus("stopped", {
+        pending: 0,
+        processing: 0,
+        sent: 1,
+        failed: 0,
+        stopped: 4,
+        total: 5,
+      }),
+    ).toBeNull();
   });
 });
