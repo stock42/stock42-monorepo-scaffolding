@@ -1,9 +1,10 @@
 import { CreateAdministratorInputSchema } from "@stock42/contracts/tenancy";
 import { MongoServerError } from "mongodb";
-import { getAppContext } from "@/context";
+import { AuditService } from "@/audit/AuditService";
 import { HttpError } from "@/errors/HttpError";
 import { controller } from "@/http/controller";
 import { AdministratorModel } from "../models/AdministratorModel";
+import { AdministratorStorage } from "../services/AdministratorStorage";
 import { requirePlatformAdministrator } from "@/security/authorization";
 import { authenticatedRequest } from "@/security/request";
 
@@ -13,7 +14,6 @@ export default controller({
   method: "POST",
   path: "/administrators/create",
   async handler(request, response) {
-    const context = getAppContext();
     const { actor } = await authenticatedRequest(request, { csrf: true });
     requirePlatformAdministrator(actor);
     const input = CreateAdministratorInputSchema.parse(request.body);
@@ -22,8 +22,8 @@ export default controller({
       passwordHash: await Bun.password.hash(input.password),
     });
     try {
-      const created = await context.storages.administrators.create(model);
-      await context.audit.record(actor, "administrator.create", {
+      const created = await AdministratorStorage.create(model);
+      await AuditService.record(actor, "administrator.create", {
         type: "administrator",
         id: created.uuid,
       });

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { Dependencies, type MongoClient } from "s42-core";
 import type { ApiConfig } from "@/config";
 import { HttpError } from "@/errors/HttpError";
 import { errorResponse } from "@/errors/handler";
@@ -15,6 +16,8 @@ const config = {
 } as ApiConfig;
 
 describe("API security primitives", () => {
+  afterEach(() => Dependencies.clear());
+
   test("adds a supplemental CSRF binding to the session", () => {
     const token = createCsrfToken("session-a", config);
     expect(verifyCsrfToken(token, "session-a", config)).toBe(true);
@@ -44,23 +47,43 @@ describe("API security primitives", () => {
 
   test("revalidates tenant state and rebuilds the current role", async () => {
     let tenantStatus = "active";
-    const operator = {
-      getData: () => ({
-        uuid: "10000000-0000-4000-8000-000000000001",
-        tenantId: "20000000-0000-4000-8000-000000000001",
-        status: "active",
-        role: "owner",
-        email: "owner@example.test",
-        displayName: "Owner",
-      }),
-    };
-    const auth = new AuthService({
-      config,
-      administrators: { findByUuid: async () => null },
-      tenants: { findByUuid: async () => ({ getData: () => ({ status: tenantStatus }) }) },
-      operators: { findByUuid: async () => operator },
-      users: { findByUuid: async () => null },
-    } as unknown as ConstructorParameters<typeof AuthService>[0]);
+    const now = new Date().toISOString();
+    const db = {
+      getCollection(name: string) {
+        return {
+          async findOne() {
+            if (name === "tenants") {
+              return {
+                uuid: "20000000-0000-4000-8000-000000000001",
+                name: "Tenant",
+                slug: "tenant",
+                ownerOperatorId: "10000000-0000-4000-8000-000000000001",
+                status: tenantStatus,
+                createdAt: now,
+                updatedAt: now,
+                version: 1,
+              };
+            }
+            if (name === "operators") {
+              return {
+                uuid: "10000000-0000-4000-8000-000000000001",
+                tenantId: "20000000-0000-4000-8000-000000000001",
+                status: "active",
+                role: "owner",
+                email: "owner@example.test",
+                displayName: "Owner",
+                passwordHash: "unused",
+                createdAt: now,
+                updatedAt: now,
+                version: 1,
+              };
+            }
+            return null;
+          },
+        };
+      },
+    } as unknown as MongoClient;
+    Dependencies.add<MongoClient>("db", db);
     const actor = {
       uuid: "10000000-0000-4000-8000-000000000001",
       tenantId: "20000000-0000-4000-8000-000000000001",
@@ -70,9 +93,9 @@ describe("API security primitives", () => {
       displayName: "Owner",
     } as const;
 
-    expect((await auth.revalidateActor(actor)).role).toBe("tenant_owner");
+    expect((await AuthService.revalidateActor(actor)).role).toBe("tenant_owner");
     tenantStatus = "inactive";
-    await expect(auth.revalidateActor(actor)).rejects.toBeInstanceOf(HttpError);
+    await expect(AuthService.revalidateActor(actor)).rejects.toBeInstanceOf(HttpError);
   });
 
   test("ignores spoofed forwarded headers from an untrusted peer", () => {

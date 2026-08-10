@@ -1,5 +1,6 @@
 import { getAppContext } from "@/context";
 import { controller } from "@/http/controller";
+import { AuthService } from "../services/AuthService";
 import { sessionCookieHeaders } from "@/security/cookies";
 import { createCsrfToken, requireCsrf } from "@/security/csrf";
 
@@ -10,9 +11,9 @@ export default controller({
   path: "/auth/refresh",
   async handler(request) {
     const context = getAppContext();
-    const claims = await context.auth.authenticateRefresh(request.headers);
+    const claims = await AuthService.authenticateRefresh(request.headers);
     requireCsrf(request, claims.sid, context.config);
-    const tokens = await context.auth.issueTokens(claims.actor);
+    const tokens = await AuthService.issueTokens(claims.actor);
     return new Response(
       JSON.stringify({
         ok: true,

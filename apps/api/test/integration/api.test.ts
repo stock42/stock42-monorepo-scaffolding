@@ -27,6 +27,7 @@ import {
 } from "@stock42/contracts/websocket";
 import type { RunningApi } from "@/index";
 import { getAppContext } from "@/context";
+import { WebSocketTicketService } from "@/websocket/WebSocketTicketService";
 
 const enabled = Bun.env.API_TEST_ENABLED === "true";
 const testRunId = `api-test-${crypto.randomUUID()}`;
@@ -484,7 +485,7 @@ describe.skipIf(!enabled)("API HTTP against configured MongoDB", () => {
       protocol: STOCK42_REALTIME_SUBPROTOCOL,
     });
     websocket.socket.close();
-    await expect(getAppContext().tickets.consume(ticket)).rejects.toThrow();
+    await expect(WebSocketTicketService.consume(ticket)).rejects.toThrow();
 
     const refreshResponse = await mutate(baseUrl, adminJar, "/auth/refresh");
     adminJar.absorb(refreshResponse.headers);

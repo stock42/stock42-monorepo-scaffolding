@@ -1,7 +1,7 @@
 import { PaginationInputSchema, UuidSchema } from "@stock42/contracts/common";
-import { getAppContext } from "@/context";
 import { controller } from "@/http/controller";
 import { authenticatedRequest } from "@/security/request";
+import { UserGroupStorage } from "../services/EmailMarketingStorage";
 import { requireMarketingTenant } from "../services/marketing-access";
 
 const QuerySchema = PaginationInputSchema.extend({ tenantId: UuidSchema });
@@ -12,11 +12,10 @@ export default controller({
   method: "GET",
   path: "/user-groups",
   async handler(request, response) {
-    const context = getAppContext();
     const { actor } = await authenticatedRequest(request);
     const query = QuerySchema.parse(request.query);
     await requireMarketingTenant(actor, query.tenantId);
-    const items = await context.storages.userGroups.list(query.tenantId, query.limit, query.cursor);
+    const items = await UserGroupStorage.list(query.tenantId, query.limit, query.cursor);
     return response.json({
       ok: true,
       data: {

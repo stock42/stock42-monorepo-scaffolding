@@ -1,10 +1,11 @@
 import { CreateUserGroupInputSchema } from "@stock42/contracts/email-marketing";
 import { MongoServerError } from "mongodb";
-import { getAppContext } from "@/context";
+import { AuditService } from "@/audit/AuditService";
 import { HttpError } from "@/errors/HttpError";
 import { controller } from "@/http/controller";
+import { UserStorage } from "@/modules/users/services/UserStorage";
 import { authenticatedRequest } from "@/security/request";
-import type { UserGroupDocument } from "../services/EmailMarketingStorage";
+import { UserGroupStorage, type UserGroupDocument } from "../services/EmailMarketingStorage";
 import { requireMarketingTenant } from "../services/marketing-access";
 
 export default controller({
@@ -13,12 +14,11 @@ export default controller({
   method: "POST",
   path: "/user-groups/create",
   async handler(request, response) {
-    const context = getAppContext();
     const { actor } = await authenticatedRequest(request, { csrf: true });
     const input = CreateUserGroupInputSchema.parse(request.body);
     await requireMarketingTenant(actor, input.tenantId);
     const uniqueUserIds = [...new Set(input.userIds)];
-    const users = await context.storages.users.findActiveByUuids(input.tenantId, uniqueUserIds);
+    const users = await UserStorage.findActiveByUuids(input.tenantId, uniqueUserIds);
     if (users.length !== uniqueUserIds.length) {
       throw new HttpError(400, "BAD_REQUEST", "Uno o más usuarios no existen o están inactivos.");
     }
@@ -35,8 +35,8 @@ export default controller({
       version: 1,
     };
     try {
-      await context.storages.userGroups.create(group);
-      group.memberCount = await context.storages.userGroups.addMembers(
+      await UserGroupStorage.create(group);
+      group.memberCount = await UserGroupStorage.addMembers(
         input.tenantId,
         group.uuid,
         uniqueUserIds,
@@ -47,7 +47,7 @@ export default controller({
       }
       throw cause;
     }
-    await context.audit.record(
+    await AuditService.record(
       actor,
       "email-marketing.group.create",
       { type: "user-group", id: group.uuid },

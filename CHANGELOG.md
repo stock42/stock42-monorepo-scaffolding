@@ -110,6 +110,11 @@ El formato sigue una versión simplificada de
 
 ### Changed
 
+- Se reemplazaron las instancias Mongo-backed de `apps/api` por storages y
+  servicios estáticos: el boot registra el `MongoClient` como dependencia
+  `db` de `s42-core`, cada operación resuelve su colección desde ese registro y
+  `src/boot/indexes.ts` garantiza en un único paso todos los índices de API,
+  incluidos migraciones, auditoría y tickets WebSocket.
 - El task Turbo `test:api` ahora permite explícitamente la configuración de
   runtime y los secretos que consume la integración, incluido el endpoint
   WebSocket público, para no ejecutar CI con variables filtradas por modo

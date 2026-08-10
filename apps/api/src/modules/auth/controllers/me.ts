@@ -1,5 +1,5 @@
-import { getAppContext } from "@/context";
 import { controller } from "@/http/controller";
+import { AuthService } from "../services/AuthService";
 
 export default controller({
   name: "auth.me",
@@ -7,7 +7,7 @@ export default controller({
   method: "GET",
   path: "/auth/me",
   async handler(request, response) {
-    const claims = await getAppContext().auth.authenticateActive(request.headers);
+    const claims = await AuthService.authenticateActive(request.headers);
     return response.json({ ok: true, data: { actor: claims.actor } });
   },
 });

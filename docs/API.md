@@ -83,10 +83,10 @@ El listener tiene:
 
 1. conexión MongoDB;
 2. `ping`;
-3. creación del `AppContext`;
-4. registro del contexto en `Dependencies` de `s42-core`;
-5. migraciones idempotentes;
-6. índices propiedad de cada módulo;
+3. registro del `MongoClient` como dependencia `db` en `Dependencies`;
+4. creación y registro del `AppContext`;
+5. garantía centralizada de índices desde `src/boot/indexes.ts`;
+6. migraciones idempotentes;
 7. bootstrap idempotente del administrador sólo bajo opt-in;
 8. seeds de test, sólo si están habilitados explícitamente;
 9. cambio de readiness a `true`.
@@ -356,14 +356,18 @@ El patrón obligatorio es:
 
 1. El contrato público vive en `packages/contracts`.
 2. El Model valida con Zod, encapsula getters/setters y expone `toPublic`.
-3. Un storage delgado extiende `MongoDBStorage`.
-4. El storage implementa sólo queries necesarias para el módulo.
-5. El módulo crea sus propios índices durante boot.
+3. Un storage estático delgado extiende `MongoDBStorage`, declara su
+   `collectionName` y no tiene constructor.
+4. Cada método estático resuelve el `MongoClient` registrado como `db` en
+   `Dependencies` y ejecuta sólo las queries necesarias para el módulo.
+5. `src/boot/indexes.ts` declara y garantiza todos los índices antes de las
+   migraciones y del bootstrap administrativo.
 6. El controller valida input, autenticación, tenant y respuesta.
 
-`MongoDBStorage` sólo ofrece inserción, búsqueda simple y listado cursor-based
-acotado a 100 elementos. No agregar repositorios genéricos, query builders ni
-tools MongoDB abiertas.
+`MongoDBStorage` sólo ofrece resolución de colección, inserción, búsqueda
+simple y listado cursor-based acotado a 100 elementos. Los storages no se
+instancian ni conservan un handle Mongo propio. No agregar repositorios
+genéricos, query builders ni tools MongoDB abiertas.
 
 Las escrituras con concurrencia usan `expectedVersion`; si el documento cambió,
 la API responde conflicto en lugar de sobrescribirlo silenciosamente.
@@ -393,7 +397,8 @@ Secuencia mínima:
 4. Crear un storage sólo si hay persistencia necesaria.
 5. Agregar controllers con método y path exactos.
 6. Aplicar autenticación, CSRF y autorización por tenant en cada controller.
-7. Registrar storage e índices en boot únicamente cuando corresponda.
+7. Declarar el `collectionName` estático y agregar sus índices a
+   `src/boot/indexes.ts` únicamente cuando corresponda.
 8. Agregar tests unitarios y tests HTTP para el flujo.
 9. Actualizar este documento, `GUIDE.md`, `CHANGELOG.md` y Nginx si cambia la
    superficie pública.

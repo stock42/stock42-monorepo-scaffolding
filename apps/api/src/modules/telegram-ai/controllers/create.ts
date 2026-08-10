@@ -3,12 +3,14 @@ import {
   TelegramAiActorRoleSchema,
 } from "@stock42/contracts/telegram-ai";
 import { MongoServerError } from "mongodb";
-import { getAppContext } from "@/context";
+import { AuditService } from "@/audit/AuditService";
 import { HttpError } from "@/errors/HttpError";
 import { controller } from "@/http/controller";
+import { TenantStorage } from "@/modules/tenants/services/TenantStorage";
 import { requireTenantManager } from "@/security/authorization";
 import { authenticatedRequest } from "@/security/request";
 import { TelegramAiAccessModel } from "../models/TelegramAiAccessModel";
+import { TelegramAiAccessStorage } from "../services/TelegramAiAccessStorage";
 
 export default controller({
   name: "telegram-ai.access.create",
@@ -16,12 +18,11 @@ export default controller({
   method: "POST",
   path: "/telegram-ai/access/create",
   async handler(request, response) {
-    const context = getAppContext();
     const { actor } = await authenticatedRequest(request, { csrf: true });
     const input = CreateTelegramAiAccessInputSchema.parse(request.body);
     requireTenantManager(actor, input.tenantId);
 
-    const tenant = await context.storages.tenants.findByUuid(input.tenantId);
+    const tenant = await TenantStorage.findByUuid(input.tenantId);
     if (!tenant || tenant.toPublic().status !== "active") {
       throw new HttpError(404, "NOT_FOUND", "Tenant activo no encontrado.");
     }
@@ -33,8 +34,8 @@ export default controller({
       actorDisplayName: actor.displayName,
     });
     try {
-      const created = await context.storages.telegramAiAccess.create(model);
-      await context.audit.record(
+      const created = await TelegramAiAccessStorage.create(model);
+      await AuditService.record(
         actor,
         "telegram-ai.access.create",
         { type: "telegram-ai-access", id: created.uuid },

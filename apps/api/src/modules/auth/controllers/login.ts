@@ -2,6 +2,7 @@ import { LoginInputSchema } from "@stock42/contracts/auth";
 import { getAppContext } from "@/context";
 import { HttpError } from "@/errors/HttpError";
 import { controller } from "@/http/controller";
+import { AuthService } from "../services/AuthService";
 import { CSRF_CONTEXT_COOKIE, parseCookies, sessionCookieHeaders } from "@/security/cookies";
 import { createCsrfToken, requireCsrf } from "@/security/csrf";
 
@@ -23,8 +24,8 @@ export default controller({
     }
     requireCsrf(request, anonymousContext, context.config);
 
-    const actor = await context.auth.login(LoginInputSchema.parse(request.body));
-    const tokens = await context.auth.issueTokens(actor);
+    const actor = await AuthService.login(LoginInputSchema.parse(request.body));
+    const tokens = await AuthService.issueTokens(actor);
     return new Response(
       JSON.stringify({
         ok: true,

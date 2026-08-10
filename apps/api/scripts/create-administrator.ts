@@ -1,5 +1,6 @@
 import { CreateAdministratorInputSchema } from "@stock42/contracts/tenancy";
-import { MongoClient } from "s42-core";
+import { Dependencies, MongoClient } from "s42-core";
+import { ensureRequiredIndexes } from "@/boot/indexes";
 import { AdministratorModel } from "@/modules/administrators/models/AdministratorModel";
 import { AdministratorStorage } from "@/modules/administrators/services/AdministratorStorage";
 
@@ -17,11 +18,11 @@ if (!uri || !database) {
 const mongo = MongoClient.getInstance({ connectionString: uri, database });
 await mongo.connect();
 try {
-  const storage = new AdministratorStorage(mongo.getCollection("administrators"));
-  await storage.ensureIndexes();
-  const existing = await storage.findByEmail(input.email);
+  Dependencies.add<MongoClient>("db", mongo);
+  await ensureRequiredIndexes();
+  const existing = await AdministratorStorage.findByEmail(input.email);
   if (existing) throw new Error("El administrador ya existe.");
-  const created = await storage.create(
+  const created = await AdministratorStorage.create(
     AdministratorModel.create({
       email: input.email,
       displayName: input.displayName,
@@ -34,4 +35,5 @@ try {
   });
 } finally {
   await mongo.close();
+  Dependencies.clear();
 }

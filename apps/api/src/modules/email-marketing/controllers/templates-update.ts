@@ -1,9 +1,10 @@
 import { UpdateEmailTemplateInputSchema } from "@stock42/contracts/email-marketing";
 import { MongoServerError } from "mongodb";
-import { getAppContext } from "@/context";
+import { AuditService } from "@/audit/AuditService";
 import { HttpError } from "@/errors/HttpError";
 import { controller } from "@/http/controller";
 import { authenticatedRequest } from "@/security/request";
+import { EmailTemplateStorage } from "../services/EmailMarketingStorage";
 import { requireMarketingTenant } from "../services/marketing-access";
 
 export default controller({
@@ -12,12 +13,11 @@ export default controller({
   method: "PATCH",
   path: "/email-templates/:id/update",
   async handler(request, response) {
-    const context = getAppContext();
     const { actor } = await authenticatedRequest(request, { csrf: true });
     const input = UpdateEmailTemplateInputSchema.parse(request.body);
     await requireMarketingTenant(actor, input.tenantId);
     try {
-      const updated = await context.storages.emailTemplates.update(
+      const updated = await EmailTemplateStorage.update(
         request.params.id ?? "",
         input.tenantId,
         input,
@@ -25,7 +25,7 @@ export default controller({
       if (!updated) {
         throw new HttpError(409, "CONFLICT", "La plantilla cambió; recargá y reintentá.");
       }
-      await context.audit.record(
+      await AuditService.record(
         actor,
         "email-marketing.template.update",
         { type: "email-template", id: updated.uuid },

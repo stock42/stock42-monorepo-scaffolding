@@ -7,23 +7,15 @@ import type {
 import nodemailer, { type Transporter } from "nodemailer";
 import type { ApiConfig } from "@/config";
 import { HttpError } from "@/errors/HttpError";
-import type { UserStorage } from "@/modules/users/services/UserStorage";
-import type {
-  EmailCampaignDocument,
+import { UserStorage } from "@/modules/users/services/UserStorage";
+import {
   EmailCampaignStorage,
-  EmailSpoolerDocument,
   EmailSpoolerStorage,
   EmailTemplateStorage,
   UserGroupStorage,
+  type EmailCampaignDocument,
+  type EmailSpoolerDocument,
 } from "./EmailMarketingStorage";
-
-type Storages = {
-  groups: UserGroupStorage;
-  templates: EmailTemplateStorage;
-  campaigns: EmailCampaignStorage;
-  spooler: EmailSpoolerStorage;
-  users: UserStorage;
-};
 
 function escapeHtml(value: string): string {
   return value
@@ -83,10 +75,7 @@ export class EmailMarketingService {
   private activeBatch: Promise<void> | null = null;
   private readonly transporter: Transporter | null;
 
-  constructor(
-    private readonly config: ApiConfig["email"],
-    private readonly storages: Storages,
-  ) {
+  constructor(private readonly config: ApiConfig["email"]) {
     this.transporter = config.configured
       ? nodemailer.createTransport({
           host: config.smtp.host,
@@ -117,7 +106,7 @@ export class EmailMarketingService {
     scheduledAt: string;
     idempotencyKey: string;
   }): Promise<EmailCampaign> {
-    const existing = await this.storages.campaigns.findByIdempotencyKey(
+    const existing = await EmailCampaignStorage.findByIdempotencyKey(
       input.tenantId,
       input.idempotencyKey,
     );
@@ -131,8 +120,8 @@ export class EmailMarketingService {
     }
 
     const [group, template] = await Promise.all([
-      this.storages.groups.findByUuid(input.groupId, input.tenantId),
-      this.storages.templates.findByUuid(input.templateId, input.tenantId),
+      UserGroupStorage.findByUuid(input.groupId, input.tenantId),
+      EmailTemplateStorage.findByUuid(input.templateId, input.tenantId),
     ]);
     if (!group || group.status !== "active") {
       throw new HttpError(404, "NOT_FOUND", "Grupo activo no encontrado.");
@@ -141,12 +130,8 @@ export class EmailMarketingService {
       throw new HttpError(404, "NOT_FOUND", "Plantilla activa no encontrada.");
     }
 
-    const memberIds = await this.storages.groups.listMemberIds(
-      input.tenantId,
-      input.groupId,
-      5_000,
-    );
-    const users = await this.storages.users.findActiveByUuids(input.tenantId, memberIds);
+    const memberIds = await UserGroupStorage.listMemberIds(input.tenantId, input.groupId, 5_000);
+    const users = await UserStorage.findActiveByUuids(input.tenantId, memberIds);
     if (users.length === 0) {
       throw new HttpError(409, "CONFLICT", "El grupo no tiene usuarios activos con email.");
     }
@@ -166,7 +151,7 @@ export class EmailMarketingService {
       updatedAt: now,
       version: 1,
     };
-    await this.storages.campaigns.create(campaign);
+    await EmailCampaignStorage.create(campaign);
 
     try {
       const entries: EmailSpoolerDocument[] = users.map((user) => {
@@ -206,51 +191,51 @@ export class EmailMarketingService {
           version: 1,
         };
       });
-      await this.storages.spooler.createMany(entries);
-      await this.storages.spooler.activateCampaignEntries(campaign.tenantId, campaign.uuid);
+      await EmailSpoolerStorage.createMany(entries);
+      await EmailSpoolerStorage.activateCampaignEntries(campaign.tenantId, campaign.uuid);
       return this.toPublicCampaign(campaign);
     } catch (cause) {
-      await this.storages.spooler.deleteCampaignEntries(campaign.tenantId, campaign.uuid);
-      await this.storages.campaigns.setStatus(campaign.uuid, campaign.tenantId, "failed");
+      await EmailSpoolerStorage.deleteCampaignEntries(campaign.tenantId, campaign.uuid);
+      await EmailCampaignStorage.setStatus(campaign.uuid, campaign.tenantId, "failed");
       throw cause;
     }
   }
 
   async stopCampaign(tenantId: string, campaignId: string): Promise<EmailCampaign> {
-    const campaign = await this.storages.campaigns.findByUuid(campaignId, tenantId);
+    const campaign = await EmailCampaignStorage.findByUuid(campaignId, tenantId);
     if (!campaign) throw new HttpError(404, "NOT_FOUND", "Campaña no encontrada.");
     if (campaign.status === "completed") {
       throw new HttpError(409, "CONFLICT", "La campaña ya fue completada.");
     }
     const stoppedAt = new Date().toISOString();
-    const updated = await this.storages.campaigns.setStatus(
+    const updated = await EmailCampaignStorage.setStatus(
       campaignId,
       tenantId,
       "stopped",
       stoppedAt,
     );
-    await this.storages.spooler.stopCampaign(tenantId, campaignId);
+    await EmailSpoolerStorage.stopCampaign(tenantId, campaignId);
     return this.toPublicCampaign(updated!);
   }
 
   async sendNow(tenantId: string, spoolerId: string): Promise<EmailSpoolerEntry> {
-    const current = await this.storages.spooler.findByUuid(spoolerId, tenantId);
+    const current = await EmailSpoolerStorage.findByUuid(spoolerId, tenantId);
     if (!current) throw new HttpError(404, "NOT_FOUND", "Email del spooler no encontrado.");
-    const campaign = await this.storages.campaigns.findByUuid(current.campaignId, tenantId);
+    const campaign = await EmailCampaignStorage.findByUuid(current.campaignId, tenantId);
     if (!campaign || campaign.status === "stopped") {
       throw new HttpError(409, "CONFLICT", "La campaña está detenida.");
     }
-    const updated = await this.storages.spooler.scheduleNow(spoolerId, tenantId);
+    const updated = await EmailSpoolerStorage.scheduleNow(spoolerId, tenantId);
     if (!updated) {
       throw new HttpError(409, "CONFLICT", "El email ya está procesándose o fue enviado.");
     }
-    await this.storages.campaigns.setStatus(campaign.uuid, tenantId, "scheduled");
+    await EmailCampaignStorage.setStatus(campaign.uuid, tenantId, "scheduled");
     if (this.config.enabled) this.runBatch();
     return publicSpooler(updated);
   }
 
   async stopSpooler(tenantId: string, spoolerId: string): Promise<EmailSpoolerEntry> {
-    const updated = await this.storages.spooler.stop(spoolerId, tenantId);
+    const updated = await EmailSpoolerStorage.stop(spoolerId, tenantId);
     if (!updated) {
       throw new HttpError(409, "CONFLICT", "El email ya está procesándose o fue enviado.");
     }
@@ -268,7 +253,7 @@ export class EmailMarketingService {
       status: document.status,
       scheduledAt: document.scheduledAt,
       stoppedAt: document.stoppedAt,
-      summary: await this.storages.spooler.summary(document.uuid),
+      summary: await EmailSpoolerStorage.summary(document.uuid),
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
       version: document.version,
@@ -291,7 +276,7 @@ export class EmailMarketingService {
       enabled: this.config.enabled,
       configured: this.config.configured,
       from: this.config.from ?? null,
-      ...(await this.storages.spooler.counts(tenantId)),
+      ...(await EmailSpoolerStorage.counts(tenantId)),
     };
   }
 
@@ -300,7 +285,7 @@ export class EmailMarketingService {
     this.processing = true;
     try {
       for (let index = 0; index < this.config.batchSize; index += 1) {
-        const document = await this.storages.spooler.claimDue(
+        const document = await EmailSpoolerStorage.claimDue(
           new Date().toISOString(),
           this.config.leaseMs,
         );
@@ -324,15 +309,12 @@ export class EmailMarketingService {
   }
 
   private async process(document: EmailSpoolerDocument): Promise<void> {
-    const campaign = await this.storages.campaigns.findByUuid(
-      document.campaignId,
-      document.tenantId,
-    );
+    const campaign = await EmailCampaignStorage.findByUuid(document.campaignId, document.tenantId);
     if (!campaign || !["scheduled", "sending"].includes(campaign.status)) {
-      await this.storages.spooler.stopClaimed(document);
+      await EmailSpoolerStorage.stopClaimed(document);
       return;
     }
-    await this.storages.campaigns.setStatus(campaign.uuid, campaign.tenantId, "sending");
+    await EmailCampaignStorage.setStatus(campaign.uuid, campaign.tenantId, "sending");
     try {
       await this.transporter!.sendMail({
         from: document.from,
@@ -340,7 +322,7 @@ export class EmailMarketingService {
         subject: document.subject,
         html: document.body,
       });
-      await this.storages.spooler.markSent(document, new Date().toISOString());
+      await EmailSpoolerStorage.markSent(document, new Date().toISOString());
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Error SMTP desconocido";
       const retryAt =
@@ -349,17 +331,17 @@ export class EmailMarketingService {
               Date.now() + Math.min(3_600_000, 60_000 * 2 ** (document.attempts - 1)),
             ).toISOString()
           : null;
-      await this.storages.spooler.markFailed(document, message, retryAt);
+      await EmailSpoolerStorage.markFailed(document, message, retryAt);
     }
     await this.refreshCampaign(document.campaignId, document.tenantId);
   }
 
   private async refreshCampaign(campaignId: string, tenantId: string): Promise<void> {
-    const campaign = await this.storages.campaigns.findByUuid(campaignId, tenantId);
+    const campaign = await EmailCampaignStorage.findByUuid(campaignId, tenantId);
     if (!campaign) return;
-    const summary: EmailCampaignSummary = await this.storages.spooler.summary(campaignId);
+    const summary: EmailCampaignSummary = await EmailSpoolerStorage.summary(campaignId);
     const status = resolveCampaignTerminalStatus(campaign.status, summary);
     if (!status) return;
-    await this.storages.campaigns.setStatus(campaignId, tenantId, status);
+    await EmailCampaignStorage.setStatus(campaignId, tenantId, status);
   }
 }

@@ -1,9 +1,11 @@
 import { CreateEmailCampaignInputSchema } from "@stock42/contracts/email-marketing";
 import { MongoServerError } from "mongodb";
+import { AuditService } from "@/audit/AuditService";
 import { getAppContext } from "@/context";
 import { HttpError } from "@/errors/HttpError";
 import { controller } from "@/http/controller";
 import { authenticatedRequest } from "@/security/request";
+import { EmailCampaignStorage } from "../services/EmailMarketingStorage";
 import { requireMarketingTenant } from "../services/marketing-access";
 
 export default controller({
@@ -18,7 +20,7 @@ export default controller({
     await requireMarketingTenant(actor, input.tenantId);
     try {
       const campaign = await context.emailMarketing.createCampaign(input);
-      await context.audit.record(
+      await AuditService.record(
         actor,
         "email-marketing.campaign.create",
         { type: "email-campaign", id: campaign.uuid },
@@ -32,7 +34,7 @@ export default controller({
       return response.status(201).json({ ok: true, data: campaign });
     } catch (cause) {
       if (cause instanceof MongoServerError && cause.code === 11_000) {
-        const existing = await context.storages.emailCampaigns.findByIdempotencyKey(
+        const existing = await EmailCampaignStorage.findByIdempotencyKey(
           input.tenantId,
           input.idempotencyKey,
         );

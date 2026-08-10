@@ -15,7 +15,7 @@ const migrations: Migration[] = [
   {
     id: "0001-flat-document-baseline",
     async run() {
-      // The baseline is represented by module-owned indexes; no data rewrite is needed.
+      // The baseline is represented by the centralized boot indexes; no data rewrite is needed.
     },
   },
 ];
@@ -23,7 +23,6 @@ const migrations: Migration[] = [
 export async function runMigrations(context: AppContext): Promise<void> {
   const collection: Collection<MigrationDocument> =
     context.mongo.getCollection<MigrationDocument>("migrations");
-  await collection.createIndex({ id: 1 }, { unique: true, name: "migrations_id_unique" });
 
   for (const migration of migrations) {
     if (await collection.findOne({ id: migration.id })) continue;

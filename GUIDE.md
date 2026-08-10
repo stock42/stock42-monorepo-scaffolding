@@ -200,7 +200,11 @@ version
 campos del dominio
 ```
 
-Los storages concretos extienden el `MongoDBStorage` delgado local. No se
+Los storages concretos son clases estáticas que extienden el
+`MongoDBStorage` delgado local. Cada clase conserva su `collectionName`,
+resuelve el `MongoClient` registrado como `db` en `Dependencies` de
+`s42-core` y expone únicamente las queries de su capacidad. No se construyen
+instancias de storage ni se guardan handles `Collection` globales. No se
 importa el storage interno de s42-core. No existe envelope `data/_v/_n`, query
 ilimitada, fallback de test ni tool Mongo genérica.
 
@@ -210,14 +214,15 @@ El orden del boot es:
 
 1. validar configuración;
 2. conectar y hacer ping a MongoDB;
-3. construir el contexto;
-4. ejecutar migraciones;
-5. crear índices por módulo;
-6. asegurar el administrador de plataforma sólo si el bootstrap está habilitado;
-7. ejecutar seeds solo bajo opt-in explícito;
-8. cargar módulos s42-core;
-9. iniciar HTTP y WebSocket;
-10. marcar readiness.
+3. registrar el `MongoClient` como dependencia `db`;
+4. construir y registrar el contexto;
+5. garantizar todos los índices desde `src/boot/indexes.ts`;
+6. ejecutar migraciones;
+7. asegurar el administrador de plataforma sólo si el bootstrap está habilitado;
+8. ejecutar seeds solo bajo opt-in explícito;
+9. cargar módulos s42-core;
+10. iniciar HTTP y WebSocket;
+11. marcar readiness.
 
 `apps/api/.env` debe definir:
 

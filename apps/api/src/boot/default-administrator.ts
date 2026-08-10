@@ -1,12 +1,12 @@
 import type { ApiConfig } from "@/config";
 import { AdministratorModel } from "@/modules/administrators/models/AdministratorModel";
-import type { AdministratorStorage } from "@/modules/administrators/services/AdministratorStorage";
+import { AdministratorStorage } from "@/modules/administrators/services/AdministratorStorage";
 
-type DefaultAdministratorStorage = Pick<AdministratorStorage, "create" | "findByEmail">;
+type DefaultAdministratorStorage = Pick<typeof AdministratorStorage, "create" | "findByEmail">;
 
 export async function ensureDefaultAdministrator(
   config: NonNullable<ApiConfig["defaultAdministrator"]>,
-  storage: DefaultAdministratorStorage,
+  storage: DefaultAdministratorStorage = AdministratorStorage,
 ): Promise<"created" | "existing"> {
   const existing = await storage.findByEmail(config.email);
   if (existing) {

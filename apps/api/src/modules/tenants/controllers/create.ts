@@ -1,6 +1,6 @@
 import { CreateTenantInputSchema } from "@stock42/contracts/tenancy";
-import { getAppContext } from "@/context";
 import { controller } from "@/http/controller";
+import { TenancyService } from "../services/TenancyService";
 import { requirePlatformAdministrator } from "@/security/authorization";
 import { authenticatedRequest } from "@/security/request";
 
@@ -10,10 +10,9 @@ export default controller({
   method: "POST",
   path: "/tenants/create",
   async handler(request, response) {
-    const context = getAppContext();
     const { actor } = await authenticatedRequest(request, { csrf: true });
     requirePlatformAdministrator(actor);
-    const tenant = await context.tenancy.createTenant(
+    const tenant = await TenancyService.createTenant(
       CreateTenantInputSchema.parse(request.body),
       actor,
     );

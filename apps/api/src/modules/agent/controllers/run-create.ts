@@ -2,6 +2,7 @@ import { BackofficeAgentRunInputSchema, CreateAgentRunInputSchema } from "@stock
 import { getAppContext } from "@/context";
 import { HttpError } from "@/errors/HttpError";
 import { controller } from "@/http/controller";
+import { TenantStorage } from "@/modules/tenants/services/TenantStorage";
 import { authenticatedRequest } from "@/security/request";
 import { resolveAgentTenant } from "../tenant-context";
 
@@ -16,7 +17,7 @@ export default controller({
     const scoped = BackofficeAgentRunInputSchema.safeParse(request.body);
     const tenantId = resolveAgentTenant(actor, scoped.success ? scoped.data.tenantId : undefined);
     const input = CreateAgentRunInputSchema.parse(request.body);
-    const tenant = await context.storages.tenants.findByUuid(tenantId);
+    const tenant = await TenantStorage.findByUuid(tenantId);
     if (!tenant || tenant.toPublic().status !== "active") {
       throw new HttpError(404, "NOT_FOUND", "Tenant activo no encontrado.");
     }

@@ -1,6 +1,7 @@
 import { getAppContext } from "@/context";
 import { HttpError } from "@/errors/HttpError";
 import { errorResponse } from "@/errors/handler";
+import { AuthService } from "@/modules/auth/services/AuthService";
 import { requireCsrf } from "@/security/csrf";
 
 export async function fileGateway(request: Request): Promise<Response | null> {
@@ -11,7 +12,7 @@ export async function fileGateway(request: Request): Promise<Response | null> {
 
   const context = getAppContext();
   try {
-    const claims = await context.auth.authenticateActive(request.headers);
+    const claims = await AuthService.authenticateActive(request.headers);
     if (!claims.actor.tenantId) {
       throw new HttpError(403, "FORBIDDEN", "Tenant requerido.");
     }

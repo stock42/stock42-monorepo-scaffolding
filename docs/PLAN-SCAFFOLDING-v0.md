@@ -60,7 +60,8 @@ Las siguientes decisiones son vinculantes para v0:
     repositorio del framework.
 11. El almacenamiento Mongo es local a la API, delgado y con documentos planos.
 12. Los modelos definen contrato, getters y setters. Los storages concretos
-    extienden una base `MongoDBStorage` simple.
+    son clases estáticas que extienden una base `MongoDBStorage` simple y
+    resuelven el cliente registrado en `Dependencies`.
 13. La estructura multi-tenant incluye administradores de plataforma, tenants,
     owners, operadores y usuarios.
 14. El backoffice incluye la base de administración de plataforma y tenants.
@@ -640,22 +641,25 @@ documentos planos y al naming del scaffold.
 
 La clase base:
 
-- recibe una colección Mongo explícita;
+- resuelve el `MongoClient` registrado como `db` en `Dependencies`;
 - implementa solo operaciones repetidas y seguras;
 - trabaja con modelos y documentos planos;
 - no inventa filtros de negocio;
 - no contiene fallbacks de testing;
 - no ejecuta queries ilimitadas por defecto;
-- no crea índices globales por conocimiento de todos los módulos;
+- no crea índices; el boot los garantiza desde un único archivo explícito;
 - no permite `$out` ni `$merge` desde entradas externas.
 
-Cada storage de dominio extiende esa clase y añade únicamente queries que el
-módulo necesita. El patrón de referencia es
+Cada storage de dominio extiende esa clase sin constructor, conserva su nombre
+de colección como propiedad estática y añade únicamente queries estáticas que
+el módulo necesita. El patrón de referencia es
 `apps/api/modules/email-campaign/services/campaign-storage.ts` de Farmasun.
 
 ### 10.4 Índices y tenancy
 
-Cada módulo es propietario de sus índices. Como mínimo se evaluarán:
+`apps/api/src/boot/indexes.ts` es propietario de la declaración completa de
+índices de la API. Cada capacidad aporta allí sus requisitos. Como mínimo se
+evaluarán:
 
 - unicidad de email normalizado por ámbito;
 - unicidad de slug o identificador externo del tenant;
@@ -1639,7 +1643,7 @@ Acciones:
 
 - crear runner de boot;
 - crear registro simple de migraciones;
-- delegar índices a módulos;
+- centralizar todos los índices en un único archivo de boot;
 - crear idempotentemente el administrador de plataforma configurado;
 - agregar seeds explícitos de test;
 - medir y loguear pasos;

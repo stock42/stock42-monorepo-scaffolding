@@ -38,6 +38,9 @@ export type WebSocketPublisher = Pick<
   "publish" | "subscriberCount"
 >;
 
+type TicketConsumer = Pick<typeof WebSocketTicketService, "consume">;
+type ActorAuthenticator = Pick<typeof AuthService, "revalidateActor">;
+
 export function agentRunTopic(tenantId: string, runId: string): string {
   return `tenant:${tenantId}:agent:run:${runId}`;
 }
@@ -51,9 +54,9 @@ export class WebSocketGateway {
   readonly controllers: WebSocketControllers;
 
   constructor(
-    private readonly tickets: WebSocketTicketService,
+    private readonly tickets: TicketConsumer,
     private readonly agentClient: AgentClient,
-    private readonly auth: AuthService,
+    private readonly auth: ActorAuthenticator,
     private readonly config: ApiConfig,
   ) {
     this.bridge = new AgentEventBridge(agentClient, (event) => this.publish(event));

@@ -7,9 +7,7 @@ import {
 import type { WebSocketData } from "s42-core";
 import type { ApiConfig } from "@/config";
 import type { AgentClient } from "@/modules/agent/services/AgentClient";
-import type { AuthService } from "@/modules/auth/services/AuthService";
 import { agentRunTopic, WebSocketGateway } from "@/websocket/WebSocketGateway";
-import type { WebSocketTicketService } from "@/websocket/WebSocketTicketService";
 import { stopSharedListener } from "@/websocket/stop-listener";
 
 const tenantId = "20000000-0000-4000-8000-000000000001";
@@ -83,12 +81,12 @@ describe("native s42-core WebSocket gateway", () => {
         if (ticket !== "valid-ticket") throw new Error("Invalid ticket");
         return actor;
       },
-    } as unknown as WebSocketTicketService;
+    };
     const auth = {
       async revalidateActor(candidate: SessionActor) {
         return candidate;
       },
-    } as AuthService;
+    };
     const agentClient = {
       async getRun() {
         return { data: { uuid: runId } };

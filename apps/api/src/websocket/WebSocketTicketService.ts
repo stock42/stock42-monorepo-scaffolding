@@ -1,8 +1,9 @@
 import type { SessionActor } from "@stock42/contracts/auth";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { Collection } from "mongodb";
-import type { ApiConfig } from "@/config";
+import { getAppContext } from "@/context";
 import { HttpError } from "@/errors/HttpError";
+import { MongoDBStorage } from "@/mongodb/MongoDBStorage";
 
 type TicketPayload = {
   nonce: string;
@@ -23,25 +24,17 @@ function hashTicket(ticket: string): string {
   return createHash("sha256").update(ticket).digest("hex");
 }
 
-export class WebSocketTicketService {
-  constructor(
-    private readonly collection: Collection<TicketDocument>,
-    private readonly config: ApiConfig,
-  ) {}
+export class WebSocketTicketService extends MongoDBStorage {
+  static readonly collectionName = "websocket_tickets";
 
-  async ensureIndexes(): Promise<void> {
-    await Promise.all([
-      this.collection.createIndex({ hash: 1 }, { unique: true, name: "ws_ticket_hash_unique" }),
-      this.collection.createIndex(
-        { expiresAt: 1 },
-        { expireAfterSeconds: 0, name: "ws_ticket_expiry_ttl" },
-      ),
-    ]);
+  private static get collection(): Collection<TicketDocument> {
+    return this.getCollection<TicketDocument>(this.collectionName);
   }
 
-  async create(
+  static async create(
     actor: SessionActor,
   ): Promise<{ ticket: string; expiresAt: string; webSocketUrl: string }> {
+    const config = getAppContext().config;
     const expiresAt = new Date(Date.now() + 60_000);
     const payload: TicketPayload = {
       nonce: crypto.randomUUID(),
@@ -49,7 +42,7 @@ export class WebSocketTicketService {
       expiresAt: expiresAt.toISOString(),
     };
     const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
-    const signature = createHmac("sha256", this.config.auth.websocketTicketSecret)
+    const signature = createHmac("sha256", config.auth.websocketTicketSecret)
       .update(encoded)
       .digest("base64url");
     const ticket = `${encoded}.${signature}`;
@@ -64,16 +57,17 @@ export class WebSocketTicketService {
     return {
       ticket,
       expiresAt: expiresAt.toISOString(),
-      webSocketUrl: this.config.websocket.publicUrl,
+      webSocketUrl: config.websocket.publicUrl,
     };
   }
 
-  async consume(ticket: string): Promise<SessionActor> {
+  static async consume(ticket: string): Promise<SessionActor> {
+    const config = getAppContext().config;
     const [encoded, suppliedSignature, extra] = ticket.split(".");
     if (!encoded || !suppliedSignature || extra) {
       throw new HttpError(401, "UNAUTHENTICATED", "Ticket WebSocket inválido.");
     }
-    const expectedSignature = createHmac("sha256", this.config.auth.websocketTicketSecret)
+    const expectedSignature = createHmac("sha256", config.auth.websocketTicketSecret)
       .update(encoded)
       .digest("base64url");
     const supplied = Buffer.from(suppliedSignature);

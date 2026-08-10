@@ -1,5 +1,6 @@
 import { getAppContext } from "@/context";
 import { controller } from "@/http/controller";
+import { AuthService } from "../services/AuthService";
 import { CSRF_CONTEXT_COOKIE, csrfContextCookie, parseCookies } from "@/security/cookies";
 import { createCsrfToken } from "@/security/csrf";
 
@@ -10,7 +11,7 @@ export default controller({
   path: "/auth/csrf",
   async handler(request) {
     const context = getAppContext();
-    const sessionContext = await context.auth.currentCsrfContext(request.headers);
+    const sessionContext = await AuthService.currentCsrfContext(request.headers);
     const cookies = parseCookies(request.headers.get("cookie"));
     const anonymousContext = cookies.get(CSRF_CONTEXT_COOKIE);
     const contextId = sessionContext ?? anonymousContext ?? crypto.randomUUID();

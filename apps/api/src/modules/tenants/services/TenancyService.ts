@@ -5,27 +5,20 @@ import type {
   CreateUserInput,
 } from "@stock42/contracts/tenancy";
 import { MongoServerError } from "mongodb";
-import type { AuditService } from "@/audit/AuditService";
+import { AuditService } from "@/audit/AuditService";
 import { HttpError } from "@/errors/HttpError";
 import { OperatorModel } from "@/modules/operators/models/OperatorModel";
-import type { OperatorStorage } from "@/modules/operators/services/OperatorStorage";
+import { OperatorStorage } from "@/modules/operators/services/OperatorStorage";
 import { UserModel } from "@/modules/users/models/UserModel";
-import type { UserStorage } from "@/modules/users/services/UserStorage";
+import { UserStorage } from "@/modules/users/services/UserStorage";
 import { TenantModel } from "../models/TenantModel";
-import type { TenantStorage } from "./TenantStorage";
+import { TenantStorage } from "./TenantStorage";
 
 export class TenancyService {
-  constructor(
-    private readonly tenants: TenantStorage,
-    private readonly operators: OperatorStorage,
-    private readonly users: UserStorage,
-    private readonly audit: AuditService,
-  ) {}
-
-  async createTenant(input: CreateTenantInput, actor: SessionActor) {
-    const existing = await this.tenants.findBySlug(input.slug);
+  static async createTenant(input: CreateTenantInput, actor: SessionActor) {
+    const existing = await TenantStorage.findBySlug(input.slug);
     if (existing) {
-      const owner = await this.operators.findByUuid(
+      const owner = await OperatorStorage.findByUuid(
         existing.getData().ownerOperatorId,
         existing.uuid,
       );
@@ -50,10 +43,10 @@ export class TenancyService {
       ownerOperatorId: owner.uuid,
     });
 
-    await this.operators.create(owner);
+    await OperatorStorage.create(owner);
     try {
-      const created = await this.tenants.create(tenant);
-      await this.audit.record(
+      const created = await TenantStorage.create(tenant);
+      await AuditService.record(
         actor,
         "tenant.create",
         { type: "tenant", id: created.uuid },
@@ -63,7 +56,7 @@ export class TenancyService {
       );
       return created;
     } catch (cause) {
-      await this.operators.removeCreatedOwner(owner.uuid, tenantId);
+      await OperatorStorage.removeCreatedOwner(owner.uuid, tenantId);
       if (cause instanceof MongoServerError && cause.code === 11_000) {
         throw new HttpError(409, "CONFLICT", "El tenant ya existe.");
       }
@@ -71,7 +64,7 @@ export class TenancyService {
     }
   }
 
-  async createOperator(tenantId: string, input: CreateOperatorInput, actor: SessionActor) {
+  static async createOperator(tenantId: string, input: CreateOperatorInput, actor: SessionActor) {
     const model = OperatorModel.create({
       tenantId,
       email: input.email,
@@ -80,8 +73,8 @@ export class TenancyService {
       passwordHash: await Bun.password.hash(input.password),
     });
     try {
-      const created = await this.operators.create(model);
-      await this.audit.record(
+      const created = await OperatorStorage.create(model);
+      await AuditService.record(
         actor,
         "operator.create",
         { type: "operator", id: created.uuid },
@@ -96,7 +89,7 @@ export class TenancyService {
     }
   }
 
-  async createUser(tenantId: string, input: CreateUserInput, actor: SessionActor) {
+  static async createUser(tenantId: string, input: CreateUserInput, actor: SessionActor) {
     const model = UserModel.create({
       tenantId,
       email: input.email,
@@ -104,8 +97,8 @@ export class TenancyService {
       passwordHash: await Bun.password.hash(input.password),
     });
     try {
-      const created = await this.users.create(model);
-      await this.audit.record(
+      const created = await UserStorage.create(model);
+      await AuditService.record(
         actor,
         "user.create",
         { type: "user", id: created.uuid },

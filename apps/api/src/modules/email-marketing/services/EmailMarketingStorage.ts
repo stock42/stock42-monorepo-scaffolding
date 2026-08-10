@@ -69,49 +69,35 @@ function withoutMongoId<T extends object>(document: T): T {
   return value;
 }
 
-export class UserGroupStorage extends MongoDBStorage<UserGroupDocument> {
-  constructor(
-    collection: Collection<UserGroupDocument>,
-    private readonly members: Collection<UserGroupMemberDocument>,
-  ) {
-    super(collection);
+export class UserGroupStorage extends MongoDBStorage {
+  static readonly collectionName = USER_GROUPS_COLLECTION;
+  static readonly membersCollectionName = USER_GROUP_MEMBERS_COLLECTION;
+
+  private static get collection(): Collection<UserGroupDocument> {
+    return this.getCollection<UserGroupDocument>(this.collectionName);
   }
 
-  async ensureIndexes(): Promise<void> {
-    await Promise.all([
-      this.collection.createIndex({ uuid: 1 }, { unique: true, name: "user_groups_uuid_unique" }),
-      this.collection.createIndex(
-        { tenantId: 1, name: 1 },
-        { unique: true, name: "user_groups_tenant_name_unique" },
-      ),
-      this.collection.createIndex(
-        { tenantId: 1, status: 1, uuid: 1 },
-        { name: "user_groups_tenant_status_uuid" },
-      ),
-      this.members.createIndex(
-        { tenantId: 1, groupId: 1, userId: 1 },
-        { unique: true, name: "user_group_members_unique" },
-      ),
-      this.members.createIndex(
-        { tenantId: 1, groupId: 1, uuid: 1 },
-        { name: "user_group_members_group_uuid" },
-      ),
-    ]);
+  private static get members(): Collection<UserGroupMemberDocument> {
+    return this.getCollection<UserGroupMemberDocument>(this.membersCollectionName);
   }
 
-  async create(document: UserGroupDocument): Promise<UserGroupDocument> {
-    return this.insert(document);
+  static async create(document: UserGroupDocument): Promise<UserGroupDocument> {
+    return this.insert(this.collection, document);
   }
 
-  async findByUuid(uuid: string, tenantId: string): Promise<UserGroupDocument | null> {
-    return this.findOne({ uuid, tenantId });
+  static async findByUuid(uuid: string, tenantId: string): Promise<UserGroupDocument | null> {
+    return this.findOne(this.collection, { uuid, tenantId });
   }
 
-  async list(tenantId: string, limit: number, cursor?: string): Promise<UserGroupDocument[]> {
-    return this.findBounded({ tenantId }, { limit, cursor });
+  static async list(
+    tenantId: string,
+    limit: number,
+    cursor?: string,
+  ): Promise<UserGroupDocument[]> {
+    return this.findBounded(this.collection, { tenantId }, { limit, cursor });
   }
 
-  async update(
+  static async update(
     uuid: string,
     tenantId: string,
     input: Pick<UserGroupDocument, "name" | "description" | "status"> & {
@@ -135,7 +121,7 @@ export class UserGroupStorage extends MongoDBStorage<UserGroupDocument> {
     return document ? withoutMongoId(document) : null;
   }
 
-  async addMembers(tenantId: string, groupId: string, userIds: string[]): Promise<number> {
+  static async addMembers(tenantId: string, groupId: string, userIds: string[]): Promise<number> {
     if (userIds.length === 0) return this.refreshMemberCount(tenantId, groupId);
     const now = new Date().toISOString();
     await this.members.bulkWrite(
@@ -161,12 +147,12 @@ export class UserGroupStorage extends MongoDBStorage<UserGroupDocument> {
     return this.refreshMemberCount(tenantId, groupId);
   }
 
-  async removeMember(tenantId: string, groupId: string, userId: string): Promise<number> {
+  static async removeMember(tenantId: string, groupId: string, userId: string): Promise<number> {
     await this.members.deleteOne({ tenantId, groupId, userId });
     return this.refreshMemberCount(tenantId, groupId);
   }
 
-  async listMemberIds(
+  static async listMemberIds(
     tenantId: string,
     groupId: string,
     limit: number,
@@ -182,7 +168,7 @@ export class UserGroupStorage extends MongoDBStorage<UserGroupDocument> {
     return documents.map((document) => document.userId);
   }
 
-  private async refreshMemberCount(tenantId: string, groupId: string): Promise<number> {
+  private static async refreshMemberCount(tenantId: string, groupId: string): Promise<number> {
     const memberCount = await this.members.countDocuments({ tenantId, groupId });
     await this.collection.updateOne(
       { uuid: groupId, tenantId },
@@ -192,37 +178,30 @@ export class UserGroupStorage extends MongoDBStorage<UserGroupDocument> {
   }
 }
 
-export class EmailTemplateStorage extends MongoDBStorage<EmailTemplateDocument> {
-  async ensureIndexes(): Promise<void> {
-    await Promise.all([
-      this.collection.createIndex(
-        { uuid: 1 },
-        { unique: true, name: "email_templates_uuid_unique" },
-      ),
-      this.collection.createIndex(
-        { tenantId: 1, name: 1 },
-        { unique: true, name: "email_templates_tenant_name_unique" },
-      ),
-      this.collection.createIndex(
-        { tenantId: 1, status: 1, uuid: 1 },
-        { name: "email_templates_tenant_status_uuid" },
-      ),
-    ]);
+export class EmailTemplateStorage extends MongoDBStorage {
+  static readonly collectionName = EMAIL_TEMPLATES_COLLECTION;
+
+  private static get collection(): Collection<EmailTemplateDocument> {
+    return this.getCollection<EmailTemplateDocument>(this.collectionName);
   }
 
-  async create(document: EmailTemplateDocument): Promise<EmailTemplateDocument> {
-    return this.insert(document);
+  static async create(document: EmailTemplateDocument): Promise<EmailTemplateDocument> {
+    return this.insert(this.collection, document);
   }
 
-  async findByUuid(uuid: string, tenantId: string): Promise<EmailTemplateDocument | null> {
-    return this.findOne({ uuid, tenantId });
+  static async findByUuid(uuid: string, tenantId: string): Promise<EmailTemplateDocument | null> {
+    return this.findOne(this.collection, { uuid, tenantId });
   }
 
-  async list(tenantId: string, limit: number, cursor?: string): Promise<EmailTemplateDocument[]> {
-    return this.findBounded({ tenantId }, { limit, cursor });
+  static async list(
+    tenantId: string,
+    limit: number,
+    cursor?: string,
+  ): Promise<EmailTemplateDocument[]> {
+    return this.findBounded(this.collection, { tenantId }, { limit, cursor });
   }
 
-  async update(
+  static async update(
     uuid: string,
     tenantId: string,
     input: Pick<EmailTemplateDocument, "name" | "subject" | "body" | "status"> & {
@@ -242,44 +221,37 @@ export class EmailTemplateStorage extends MongoDBStorage<EmailTemplateDocument> 
   }
 }
 
-export class EmailCampaignStorage extends MongoDBStorage<EmailCampaignDocument> {
-  async ensureIndexes(): Promise<void> {
-    await Promise.all([
-      this.collection.createIndex(
-        { uuid: 1 },
-        { unique: true, name: "email_campaigns_uuid_unique" },
-      ),
-      this.collection.createIndex(
-        { tenantId: 1, idempotencyKey: 1 },
-        { unique: true, name: "email_campaigns_tenant_idempotency_unique" },
-      ),
-      this.collection.createIndex(
-        { tenantId: 1, status: 1, uuid: 1 },
-        { name: "email_campaigns_tenant_status_uuid" },
-      ),
-    ]);
+export class EmailCampaignStorage extends MongoDBStorage {
+  static readonly collectionName = EMAIL_CAMPAIGNS_COLLECTION;
+
+  private static get collection(): Collection<EmailCampaignDocument> {
+    return this.getCollection<EmailCampaignDocument>(this.collectionName);
   }
 
-  async create(document: EmailCampaignDocument): Promise<EmailCampaignDocument> {
-    return this.insert(document);
+  static async create(document: EmailCampaignDocument): Promise<EmailCampaignDocument> {
+    return this.insert(this.collection, document);
   }
 
-  async findByUuid(uuid: string, tenantId: string): Promise<EmailCampaignDocument | null> {
-    return this.findOne({ uuid, tenantId });
+  static async findByUuid(uuid: string, tenantId: string): Promise<EmailCampaignDocument | null> {
+    return this.findOne(this.collection, { uuid, tenantId });
   }
 
-  async findByIdempotencyKey(
+  static async findByIdempotencyKey(
     tenantId: string,
     idempotencyKey: string,
   ): Promise<EmailCampaignDocument | null> {
-    return this.findOne({ tenantId, idempotencyKey });
+    return this.findOne(this.collection, { tenantId, idempotencyKey });
   }
 
-  async list(tenantId: string, limit: number, cursor?: string): Promise<EmailCampaignDocument[]> {
-    return this.findBounded({ tenantId }, { limit, cursor });
+  static async list(
+    tenantId: string,
+    limit: number,
+    cursor?: string,
+  ): Promise<EmailCampaignDocument[]> {
+    return this.findBounded(this.collection, { tenantId }, { limit, cursor });
   }
 
-  async setStatus(
+  static async setStatus(
     uuid: string,
     tenantId: string,
     status: EmailCampaignStatus,
@@ -297,30 +269,18 @@ export class EmailCampaignStorage extends MongoDBStorage<EmailCampaignDocument> 
   }
 }
 
-export class EmailSpoolerStorage extends MongoDBStorage<EmailSpoolerDocument> {
-  async ensureIndexes(): Promise<void> {
-    await Promise.all([
-      this.collection.createIndex({ uuid: 1 }, { unique: true, name: "email_spooler_uuid_unique" }),
-      this.collection.createIndex(
-        { campaignId: 1, userId: 1 },
-        { unique: true, name: "email_spooler_campaign_user_unique" },
-      ),
-      this.collection.createIndex(
-        { ready: 1, status: 1, scheduledAt: 1, uuid: 1 },
-        { name: "email_spooler_due" },
-      ),
-      this.collection.createIndex(
-        { tenantId: 1, campaignId: 1, status: 1 },
-        { name: "email_spooler_tenant_campaign_status" },
-      ),
-    ]);
+export class EmailSpoolerStorage extends MongoDBStorage {
+  static readonly collectionName = EMAIL_SPOOLER_COLLECTION;
+
+  private static get collection(): Collection<EmailSpoolerDocument> {
+    return this.getCollection<EmailSpoolerDocument>(this.collectionName);
   }
 
-  async createMany(documents: EmailSpoolerDocument[]): Promise<void> {
+  static async createMany(documents: EmailSpoolerDocument[]): Promise<void> {
     if (documents.length > 0) await this.collection.insertMany(documents, { ordered: true });
   }
 
-  async activateCampaignEntries(tenantId: string, campaignId: string): Promise<number> {
+  static async activateCampaignEntries(tenantId: string, campaignId: string): Promise<number> {
     const result = await this.collection.updateMany(
       { tenantId, campaignId, ready: false },
       { $set: { ready: true, updatedAt: new Date().toISOString() }, $inc: { version: 1 } },
@@ -328,11 +288,11 @@ export class EmailSpoolerStorage extends MongoDBStorage<EmailSpoolerDocument> {
     return result.modifiedCount;
   }
 
-  async findByUuid(uuid: string, tenantId: string): Promise<EmailSpoolerDocument | null> {
-    return this.findOne({ uuid, tenantId });
+  static async findByUuid(uuid: string, tenantId: string): Promise<EmailSpoolerDocument | null> {
+    return this.findOne(this.collection, { uuid, tenantId });
   }
 
-  async list(
+  static async list(
     tenantId: string,
     limit: number,
     cursor?: string,
@@ -341,10 +301,10 @@ export class EmailSpoolerStorage extends MongoDBStorage<EmailSpoolerDocument> {
     const filter: Filter<EmailSpoolerDocument> = { tenantId };
     if (filters.campaignId) filter.campaignId = filters.campaignId;
     if (filters.status) filter.status = filters.status;
-    return this.findBounded(filter, { limit, cursor });
+    return this.findBounded(this.collection, filter, { limit, cursor });
   }
 
-  async claimDue(now: string, leaseMs: number): Promise<EmailSpoolerDocument | null> {
+  static async claimDue(now: string, leaseMs: number): Promise<EmailSpoolerDocument | null> {
     const leaseToken = crypto.randomUUID();
     const leaseExpiresAt = new Date(Date.now() + leaseMs).toISOString();
     const document = await this.collection.findOneAndUpdate(
@@ -367,7 +327,7 @@ export class EmailSpoolerStorage extends MongoDBStorage<EmailSpoolerDocument> {
     return document ? withoutMongoId(document) : null;
   }
 
-  async markSent(document: EmailSpoolerDocument, sentAt: string): Promise<boolean> {
+  static async markSent(document: EmailSpoolerDocument, sentAt: string): Promise<boolean> {
     const result = await this.collection.updateOne(
       { uuid: document.uuid, status: "processing", leaseToken: document.leaseToken },
       {
@@ -385,7 +345,7 @@ export class EmailSpoolerStorage extends MongoDBStorage<EmailSpoolerDocument> {
     return result.modifiedCount === 1;
   }
 
-  async markFailed(
+  static async markFailed(
     document: EmailSpoolerDocument,
     error: string,
     retryAt: string | null,
@@ -407,7 +367,7 @@ export class EmailSpoolerStorage extends MongoDBStorage<EmailSpoolerDocument> {
     return result.modifiedCount === 1;
   }
 
-  async scheduleNow(uuid: string, tenantId: string): Promise<EmailSpoolerDocument | null> {
+  static async scheduleNow(uuid: string, tenantId: string): Promise<EmailSpoolerDocument | null> {
     const now = new Date().toISOString();
     const document = await this.collection.findOneAndUpdate(
       { uuid, tenantId, status: { $in: ["pending", "failed"] } },
@@ -427,7 +387,7 @@ export class EmailSpoolerStorage extends MongoDBStorage<EmailSpoolerDocument> {
     return document ? withoutMongoId(document) : null;
   }
 
-  async stop(uuid: string, tenantId: string): Promise<EmailSpoolerDocument | null> {
+  static async stop(uuid: string, tenantId: string): Promise<EmailSpoolerDocument | null> {
     const document = await this.collection.findOneAndUpdate(
       { uuid, tenantId, status: { $in: ["pending", "failed"] } },
       {
@@ -444,7 +404,7 @@ export class EmailSpoolerStorage extends MongoDBStorage<EmailSpoolerDocument> {
     return document ? withoutMongoId(document) : null;
   }
 
-  async stopClaimed(document: EmailSpoolerDocument): Promise<boolean> {
+  static async stopClaimed(document: EmailSpoolerDocument): Promise<boolean> {
     const result = await this.collection.updateOne(
       { uuid: document.uuid, status: "processing", leaseToken: document.leaseToken },
       {
@@ -460,7 +420,7 @@ export class EmailSpoolerStorage extends MongoDBStorage<EmailSpoolerDocument> {
     return result.modifiedCount === 1;
   }
 
-  async stopCampaign(tenantId: string, campaignId: string): Promise<number> {
+  static async stopCampaign(tenantId: string, campaignId: string): Promise<number> {
     const result = await this.collection.updateMany(
       { tenantId, campaignId, status: { $in: ["pending", "failed"] } },
       {
@@ -476,12 +436,12 @@ export class EmailSpoolerStorage extends MongoDBStorage<EmailSpoolerDocument> {
     return result.modifiedCount;
   }
 
-  async deleteCampaignEntries(tenantId: string, campaignId: string): Promise<number> {
+  static async deleteCampaignEntries(tenantId: string, campaignId: string): Promise<number> {
     const result = await this.collection.deleteMany({ tenantId, campaignId });
     return result.deletedCount;
   }
 
-  async summary(campaignId: string): Promise<EmailCampaignSummary> {
+  static async summary(campaignId: string): Promise<EmailCampaignSummary> {
     const rows = await this.collection
       .aggregate<{ _id: EmailSpoolerStatus; count: number }>([
         { $match: { campaignId } },
@@ -503,7 +463,9 @@ export class EmailSpoolerStorage extends MongoDBStorage<EmailSpoolerDocument> {
     return summary;
   }
 
-  async counts(tenantId: string): Promise<{ pending: number; processing: number; failed: number }> {
+  static async counts(
+    tenantId: string,
+  ): Promise<{ pending: number; processing: number; failed: number }> {
     const [pending, processing, failed] = await Promise.all([
       this.collection.countDocuments({ tenantId, status: "pending" }),
       this.collection.countDocuments({ tenantId, status: "processing" }),

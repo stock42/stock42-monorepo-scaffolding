@@ -1,6 +1,6 @@
 import { PaginationInputSchema } from "@stock42/contracts/common";
-import { getAppContext } from "@/context";
 import { controller } from "@/http/controller";
+import { UserStorage } from "../services/UserStorage";
 import { requireTenantAccess } from "@/security/authorization";
 import { authenticatedRequest } from "@/security/request";
 
@@ -10,12 +10,11 @@ export default controller({
   method: "GET",
   path: "/tenants/:id/users",
   async handler(request, response) {
-    const context = getAppContext();
     const { actor } = await authenticatedRequest(request);
     const tenantId = request.params.id ?? "";
     requireTenantAccess(actor, tenantId);
     const pagination = PaginationInputSchema.parse(request.query);
-    const items = await context.storages.users.list(tenantId, pagination.limit, pagination.cursor);
+    const items = await UserStorage.list(tenantId, pagination.limit, pagination.cursor);
     return response.json({
       ok: true,
       data: {

@@ -1,7 +1,8 @@
 import { RemoveUserGroupMemberInputSchema } from "@stock42/contracts/email-marketing";
-import { getAppContext } from "@/context";
+import { AuditService } from "@/audit/AuditService";
 import { controller } from "@/http/controller";
 import { authenticatedRequest } from "@/security/request";
+import { UserGroupStorage } from "../services/EmailMarketingStorage";
 import { requireMarketingTenant } from "../services/marketing-access";
 
 export default controller({
@@ -10,18 +11,13 @@ export default controller({
   method: "DELETE",
   path: "/user-groups/:id/members/:userId",
   async handler(request, response) {
-    const context = getAppContext();
     const { actor } = await authenticatedRequest(request, { csrf: true });
     const input = RemoveUserGroupMemberInputSchema.parse(request.body);
     await requireMarketingTenant(actor, input.tenantId);
     const groupId = request.params.id ?? "";
     const userId = request.params.userId ?? "";
-    const memberCount = await context.storages.userGroups.removeMember(
-      input.tenantId,
-      groupId,
-      userId,
-    );
-    await context.audit.record(
+    const memberCount = await UserGroupStorage.removeMember(input.tenantId, groupId, userId);
+    await AuditService.record(
       actor,
       "email-marketing.group-members.remove",
       { type: "user-group", id: groupId },

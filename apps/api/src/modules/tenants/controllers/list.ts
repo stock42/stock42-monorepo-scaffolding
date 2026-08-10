@@ -1,6 +1,6 @@
 import { PaginationInputSchema } from "@stock42/contracts/common";
-import { getAppContext } from "@/context";
 import { controller } from "@/http/controller";
+import { TenantStorage } from "../services/TenantStorage";
 import { requirePlatformAdministrator } from "@/security/authorization";
 import { authenticatedRequest } from "@/security/request";
 
@@ -10,11 +10,10 @@ export default controller({
   method: "GET",
   path: "/tenants",
   async handler(request, response) {
-    const context = getAppContext();
     const { actor } = await authenticatedRequest(request);
     requirePlatformAdministrator(actor);
     const pagination = PaginationInputSchema.parse(request.query);
-    const items = await context.storages.tenants.list(pagination.limit, pagination.cursor);
+    const items = await TenantStorage.list(pagination.limit, pagination.cursor);
     return response.json({
       ok: true,
       data: {

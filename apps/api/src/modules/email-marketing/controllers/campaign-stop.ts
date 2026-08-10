@@ -1,4 +1,5 @@
 import { EmailCampaignActionInputSchema } from "@stock42/contracts/email-marketing";
+import { AuditService } from "@/audit/AuditService";
 import { getAppContext } from "@/context";
 import { controller } from "@/http/controller";
 import { authenticatedRequest } from "@/security/request";
@@ -18,7 +19,7 @@ export default controller({
       input.tenantId,
       request.params.id ?? "",
     );
-    await context.audit.record(
+    await AuditService.record(
       actor,
       "email-marketing.campaign.stop",
       { type: "email-campaign", id: campaign.uuid },

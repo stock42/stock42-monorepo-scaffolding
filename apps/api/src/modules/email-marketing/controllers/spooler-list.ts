@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getAppContext } from "@/context";
 import { controller } from "@/http/controller";
 import { authenticatedRequest } from "@/security/request";
+import { EmailSpoolerStorage } from "../services/EmailMarketingStorage";
 import { requireMarketingTenant } from "../services/marketing-access";
 
 const QuerySchema = PaginationInputSchema.extend({
@@ -25,12 +26,10 @@ export default controller({
     const { actor } = await authenticatedRequest(request);
     const query = QuerySchema.parse(request.query);
     await requireMarketingTenant(actor, query.tenantId);
-    const documents = await context.storages.emailSpooler.list(
-      query.tenantId,
-      query.limit,
-      query.cursor,
-      { campaignId: query.campaignId, status: query.status },
-    );
+    const documents = await EmailSpoolerStorage.list(query.tenantId, query.limit, query.cursor, {
+      campaignId: query.campaignId,
+      status: query.status,
+    });
     return response.json({
       ok: true,
       data: {

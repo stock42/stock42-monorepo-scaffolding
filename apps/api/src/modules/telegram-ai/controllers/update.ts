@@ -1,9 +1,10 @@
 import { ScopedUpdateTelegramAiAccessInputSchema } from "@stock42/contracts/telegram-ai";
-import { getAppContext } from "@/context";
+import { AuditService } from "@/audit/AuditService";
 import { HttpError } from "@/errors/HttpError";
 import { controller } from "@/http/controller";
 import { requireTenantManager } from "@/security/authorization";
 import { authenticatedRequest } from "@/security/request";
+import { TelegramAiAccessStorage } from "../services/TelegramAiAccessStorage";
 
 export default controller({
   name: "telegram-ai.access.update",
@@ -11,11 +12,10 @@ export default controller({
   method: "PATCH",
   path: "/telegram-ai/access/:id/update",
   async handler(request, response) {
-    const context = getAppContext();
     const { actor } = await authenticatedRequest(request, { csrf: true });
     const input = ScopedUpdateTelegramAiAccessInputSchema.parse(request.body);
     requireTenantManager(actor, input.tenantId);
-    const updated = await context.storages.telegramAiAccess.update(
+    const updated = await TelegramAiAccessStorage.update(
       request.params.id ?? "",
       input.tenantId,
       input,
@@ -23,7 +23,7 @@ export default controller({
     if (!updated) {
       throw new HttpError(409, "CONFLICT", "El acceso cambió; recargá y reintentá.");
     }
-    await context.audit.record(
+    await AuditService.record(
       actor,
       "telegram-ai.access.update",
       { type: "telegram-ai-access", id: updated.uuid },

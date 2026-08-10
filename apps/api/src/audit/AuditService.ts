@@ -1,5 +1,6 @@
 import type { SessionActor } from "@stock42/contracts/auth";
 import type { Collection } from "mongodb";
+import { MongoDBStorage } from "@/mongodb/MongoDBStorage";
 
 type AuditDocument = {
   uuid: string;
@@ -13,18 +14,14 @@ type AuditDocument = {
   createdAt: string;
 };
 
-export class AuditService {
-  constructor(private readonly collection: Collection<AuditDocument>) {}
+export class AuditService extends MongoDBStorage {
+  static readonly collectionName = "audit_events";
 
-  async ensureIndexes(): Promise<void> {
-    await Promise.all([
-      this.collection.createIndex({ uuid: 1 }, { unique: true, name: "audit_uuid_unique" }),
-      this.collection.createIndex({ tenantId: 1, createdAt: -1 }, { name: "audit_tenant_created" }),
-      this.collection.createIndex({ actorId: 1, createdAt: -1 }, { name: "audit_actor_created" }),
-    ]);
+  private static get collection(): Collection<AuditDocument> {
+    return this.getCollection<AuditDocument>(this.collectionName);
   }
 
-  async record(
+  static async record(
     actor: SessionActor,
     action: string,
     target: { type: string; id: string },
