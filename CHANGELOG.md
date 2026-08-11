@@ -9,6 +9,12 @@ El formato sigue una versión simplificada de
 
 ### Added
 
+- Se agregó ERA2.md con la visión arquitectónica y de producto para llevar el
+  monorepo a una plataforma agent-native adoptable hacia 2030: baseline
+  verificable, amenazas y deuda, Trust Kernel, Agent OS, software factory
+  actualizable, operación enterprise, modelo de negocio, roadmap E2-P0 a E2-P3,
+  criterios de aceptación, métricas y gobernanza.
+
 - Se implementó email marketing de extremo a extremo: contratos Zod,
   colecciones e índices MongoDB tenant-aware, grupos manuales y miembros,
   plantillas HTML versionadas, campañas idempotentes con snapshots por usuario,
