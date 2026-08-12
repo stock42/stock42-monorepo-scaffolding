@@ -19,6 +19,20 @@ export const AgentRunStatusSchema = z.enum([
 export const AgentActionLevelSchema = z.enum(["A0", "A1", "A2", "A3"]);
 export const ToolActionClassSchema = z.enum(["read", "write", "critical"]);
 
+export const AgentRunProgressSchema = z.object({
+  stage: z.enum([
+    "analyzing",
+    "tool_started",
+    "tool_completed",
+    "tool_failed",
+    "waiting_confirmation",
+    "responding",
+  ]),
+  message: z.string().trim().min(1).max(240),
+  toolName: z.string().trim().min(1).max(120).optional(),
+  step: z.number().int().positive().optional(),
+});
+
 export const CreateAgentRunInputSchema = z.object({
   conversationId: UuidSchema.optional(),
   task: z.string().trim().min(1).max(20_000),
@@ -108,6 +122,7 @@ export const InternalRunEnvelopeSchema = z.object({
 export type AgentConfirmation = z.infer<typeof AgentConfirmationSchema>;
 export type AgentRun = z.infer<typeof AgentRunSchema>;
 export type AgentRunEvent = z.infer<typeof AgentRunEventSchema>;
+export type AgentRunProgress = z.infer<typeof AgentRunProgressSchema>;
 export type AgentRunStatus = z.infer<typeof AgentRunStatusSchema>;
 export type BackofficeAgentRunInput = z.infer<typeof BackofficeAgentRunInputSchema>;
 export type BackofficeAgentScope = z.infer<typeof BackofficeAgentScopeSchema>;

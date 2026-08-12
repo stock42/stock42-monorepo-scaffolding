@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { AgentRunProgressSchema, type AgentRunProgress } from "@stock42/contracts/agent";
 import type { AgentConfig } from "@/config";
 import { DeepSeekClient, type DeepSeekMessage } from "@/providers/deepseek/DeepSeekClient";
 import type { ManifestRegistry } from "@/runtime/contracts/manifest";
@@ -98,6 +99,14 @@ export class AgentOrchestrator {
 
     for (let step = 0; step < 12; step += 1) {
       await this.assertActive(run.uuid, processId, signal);
+      await this.progress(run.uuid, {
+        stage: "analyzing",
+        message:
+          step === 0
+            ? "Analizando la solicitud y seleccionando herramientas..."
+            : "Analizando los resultados y definiendo el siguiente paso...",
+        step: step + 1,
+      });
       const assistant = await this.deepseek.complete(messages, this.tools.list(), signal);
       const stored: MessageDocument = {
         uuid: crypto.randomUUID(),
@@ -123,6 +132,11 @@ export class AgentOrchestrator {
       if (!assistant.tool_calls?.length) {
         const answer = assistant.content?.trim();
         if (!answer) throw new Error("DeepSeek devolvió una respuesta vacía.");
+        await this.progress(run.uuid, {
+          stage: "responding",
+          message: "Preparando la respuesta final...",
+          step: step + 1,
+        });
         await this.store.transition(
           run.uuid,
           "succeeded",
@@ -199,6 +213,11 @@ export class AgentOrchestrator {
     await context.assertActive();
 
     if (tool.actionClass === "critical") {
+      await this.progress(run.uuid, {
+        stage: "waiting_confirmation",
+        message: `Esperando confirmación para ${tool.name}...`,
+        toolName: tool.name,
+      });
       const preview = tool.confirmationPreview
         ? await tool.confirmationPreview(parsedInput.data, context)
         : null;
@@ -235,6 +254,11 @@ export class AgentOrchestrator {
     input: unknown,
     toolCallId: string,
   ): Promise<unknown> {
+    await this.progress(run.uuid, {
+      stage: "tool_started",
+      message: `Ejecutando ${tool.name}...`,
+      toolName: tool.name,
+    });
     const inputHash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
     const claim = await this.store.beginToolExecution({
       run,
@@ -244,7 +268,20 @@ export class AgentOrchestrator {
       inputHash,
       idempotent: tool.idempotent,
     });
-    if (claim.kind === "cached") return claim.output;
+    if (claim.kind === "cached") {
+      await this.store.appendEvent(run.uuid, "tool.completed", {
+        toolName: tool.name,
+        toolCallId,
+        ok: true,
+        cached: true,
+      });
+      await this.progress(run.uuid, {
+        stage: "tool_completed",
+        message: `${tool.name} completada. Analizando el resultado...`,
+        toolName: tool.name,
+      });
+      return claim.output;
+    }
 
     const bounded = boundedSignal(processSignal, tool.timeoutMs);
     const context = this.toolContext(run, processId, bounded.signal);
@@ -258,9 +295,24 @@ export class AgentOrchestrator {
         toolCallId,
         ok: true,
       });
+      await this.progress(run.uuid, {
+        stage: "tool_completed",
+        message: `${tool.name} completada. Analizando el resultado...`,
+        toolName: tool.name,
+      });
       return result;
     } catch (cause) {
       await this.store.failToolExecution(claim.execution.uuid, processId, cause);
+      await this.store.appendEvent(run.uuid, "tool.completed", {
+        toolName: tool.name,
+        toolCallId,
+        ok: false,
+      });
+      await this.progress(run.uuid, {
+        stage: "tool_failed",
+        message: `${tool.name} falló. Evaluando el resultado...`,
+        toolName: tool.name,
+      });
       if (bounded.signal.aborted && !processSignal.aborted) {
         throw new Error(`Tool timeout: ${tool.name}`);
       }
@@ -343,6 +395,10 @@ export class AgentOrchestrator {
       throw signal.reason instanceof Error ? signal.reason : new Error("agent_process_aborted");
     }
     await this.store.assertActiveAttempt(runId, processId);
+  }
+
+  private async progress(runId: string, progress: AgentRunProgress): Promise<void> {
+    await this.store.appendEvent(runId, "run.progress", AgentRunProgressSchema.parse(progress));
   }
 
   private async requireRun(runId: string): Promise<RunDocument> {

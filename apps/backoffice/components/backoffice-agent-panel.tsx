@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  AgentRunEventsResponseSchema,
   AgentRunEventSchema,
   AgentRunResponseSchema,
   type AgentRun,
@@ -23,6 +22,11 @@ import {
 import { Label } from "@stock42/ui/components/label";
 import { Ban, Check, LoaderCircle, Radio, Send, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  agentRunStatusFromEvent,
+  currentAgentProgress,
+  updateAgentRunFromEvent,
+} from "@/lib/agent-run-events";
 
 const terminalStatuses = new Set([
   "succeeded",
@@ -60,9 +64,7 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const activeRunId = run?.uuid;
-  const activeRunTerminal = run ? terminalStatuses.has(run.status) : false;
   const cursorRef = useRef(0);
-  const realtimeClientRef = useRef<AgentRealtimeClient | null>(null);
 
   useEffect(() => {
     cursorRef.current = cursor;
@@ -95,18 +97,6 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
     let active = true;
     const channel = `agent:run:${runId}`;
 
-    async function refreshRun() {
-      const response = await fetch(
-        `/api/agent/runs/${encodeURIComponent(runId)}?tenantId=${encodeURIComponent(tenantId)}`,
-        { cache: "no-store" },
-      );
-      if (!response.ok) throw new Error("No fue posible actualizar el run.");
-      const nextRun = AgentRunResponseSchema.parse(await response.json()).data;
-      if (!active) return;
-      setRun(nextRun);
-      if (terminalStatuses.has(nextRun.status)) client.stop();
-    }
-
     const client = new AgentRealtimeClient({
       onStateChange: (state) => {
         if (active) setRealtimeState(state);
@@ -122,78 +112,20 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
             ? current
             : [...current, event].sort((left, right) => left.sequence - right.sequence),
         );
-        cursorRef.current = message.cursor;
         setCursor(message.cursor);
-        void refreshRun().catch(() => {
-          if (active) setError("No fue posible actualizar el estado del run.");
-        });
+        setRun((current) => updateAgentRunFromEvent(current, event));
+        const status = agentRunStatusFromEvent(event);
+        if (status && terminalStatuses.has(status)) client.stop();
       },
     });
-    realtimeClientRef.current = client;
     client.subscribe(channel, { cursor: cursorRef.current, tenantId });
     client.start();
 
     return () => {
       active = false;
       client.stop();
-      if (realtimeClientRef.current === client) realtimeClientRef.current = null;
     };
   }, [activeRunId, tenantId]);
-
-  useEffect(() => {
-    if (!activeRunId || !tenantId || realtimeState === "open" || activeRunTerminal) {
-      return;
-    }
-    const runId = activeRunId;
-    const channel = `agent:run:${runId}`;
-    let active = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function refreshFallback() {
-      try {
-        const [runResponse, eventsResponse] = await Promise.all([
-          fetch(
-            `/api/agent/runs/${encodeURIComponent(runId)}?tenantId=${encodeURIComponent(tenantId)}`,
-            { cache: "no-store" },
-          ),
-          fetch(
-            `/api/agent/runs/${encodeURIComponent(runId)}/events?tenantId=${encodeURIComponent(tenantId)}&cursor=${cursorRef.current}`,
-            { cache: "no-store" },
-          ),
-        ]);
-        if (!runResponse.ok || !eventsResponse.ok) {
-          throw new Error("No fue posible actualizar el run.");
-        }
-        const nextRun = AgentRunResponseSchema.parse(await runResponse.json()).data;
-        const nextEvents = AgentRunEventsResponseSchema.parse(await eventsResponse.json()).data;
-        if (!active) return;
-        setRun(nextRun);
-        if (nextEvents.events.length) {
-          setEvents((current) => {
-            const known = new Set(current.map((item) => item.uuid));
-            return [...current, ...nextEvents.events.filter((item) => !known.has(item.uuid))].sort(
-              (left, right) => left.sequence - right.sequence,
-            );
-          });
-        }
-        cursorRef.current = nextEvents.nextCursor;
-        setCursor(nextEvents.nextCursor);
-        realtimeClientRef.current?.advanceCursor(channel, nextEvents.nextCursor);
-        if (!terminalStatuses.has(nextRun.status)) timer = setTimeout(refreshFallback, 3_000);
-      } catch (cause) {
-        if (active) {
-          setError(cause instanceof Error ? cause.message : "No fue posible actualizar el run.");
-          timer = setTimeout(refreshFallback, 3_000);
-        }
-      }
-    }
-
-    timer = setTimeout(refreshFallback, 750);
-    return () => {
-      active = false;
-      if (timer) clearTimeout(timer);
-    };
-  }, [activeRunId, activeRunTerminal, realtimeState, tenantId]);
 
   const pendingConfirmations = useMemo(() => {
     const pendingItems = new Map<
@@ -247,7 +179,7 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
           task,
           manifest: "assistant",
           idempotencyKey: crypto.randomUUID(),
-          metadata: { channel: "backoffice-http" },
+          metadata: { channel: "backoffice-websocket" },
         }),
       });
       if (!response.ok) throw new Error("No fue posible crear la ejecución.");
@@ -299,6 +231,8 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
   }
 
   const answer = responseAnswer(run);
+  const progress = currentAgentProgress(run, events);
+  const runTerminal = run ? terminalStatuses.has(run.status) : false;
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -351,6 +285,16 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
               </Button>
             </div>
           </form>
+          {progress ? (
+            <div
+              aria-atomic="true"
+              aria-live="polite"
+              className="flex items-center gap-2 rounded-lg border border-border bg-muted/25 px-4 py-3 text-sm text-muted-foreground"
+            >
+              <LoaderCircle className="size-4 shrink-0 animate-spin text-primary" />
+              <span className="truncate">{progress}</span>
+            </div>
+          ) : null}
           {answer ? (
             <div className="rounded-lg border border-border bg-muted/25 p-5">
               <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-primary">
@@ -414,9 +358,11 @@ export function BackofficeAgentPanel({ fixedTenantId }: { fixedTenantId: string 
           <CardTitle>Estado del run</CardTitle>
           <CardDescription className="flex items-center gap-2">
             <Radio className="size-3.5" />
-            {realtimeState === "open"
-              ? "WebSocket conectado"
-              : "Reconectando · replay HTTP de respaldo"}
+            {runTerminal
+              ? "Run finalizado · WebSocket cerrado"
+              : realtimeState === "open"
+                ? "WebSocket conectado"
+                : "Reconectando el canal WebSocket"}
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">

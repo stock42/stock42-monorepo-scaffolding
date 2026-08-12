@@ -400,7 +400,9 @@ reanudarse y las no idempotentes con outcome incierto exigen reconciliación.
 El único modelo permitido es `deepseek-v4-pro`. El request habilita thinking y
 `reasoning_effort=high|max`. Cuando DeepSeek solicita tools, el
 `reasoning_content` de la respuesta assistant se conserva en la continuación.
-Prompts y reasoning completos no se imprimen en logs.
+Prompts y reasoning completos no se imprimen en logs ni se envían al WebSocket.
+La UI recibe en su lugar resúmenes operativos acotados de análisis, tools,
+confirmations y preparación de respuesta.
 
 ### Tools y confirmations
 

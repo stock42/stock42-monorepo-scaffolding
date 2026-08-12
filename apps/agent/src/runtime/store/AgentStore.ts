@@ -360,7 +360,10 @@ export class AgentStore {
       name: null,
       createdAt: now.toISOString(),
     });
-    await this.appendEvent(run.uuid, "run.status", { status: "queued" });
+    await this.appendEvent(run.uuid, "run.status", {
+      status: "queued",
+      run: this.toPublicRun(run),
+    });
     return this.toPublicRun(run);
   }
 
@@ -459,7 +462,10 @@ export class AgentStore {
         { returnDocument: "after" },
       );
       if (claimed) {
-        await this.appendEvent(claimed.uuid, "run.status", { status: "starting" });
+        await this.appendEvent(claimed.uuid, "run.status", {
+          status: "starting",
+          run: this.toPublicRun(claimed),
+        });
         return claimed;
       }
     }
@@ -506,7 +512,10 @@ export class AgentStore {
     );
     if (!updated) throw new Error("El run ya no puede comenzar.");
     await this.processes.updateOne({ uuid: processId }, { $set: { status: "running" } });
-    await this.appendEvent(runId, "run.status", { status: "running" });
+    await this.appendEvent(runId, "run.status", {
+      status: "running",
+      run: this.toPublicRun(updated),
+    });
   }
 
   async heartbeat(runId: string, processId: string, progress = false): Promise<void> {
@@ -576,6 +585,7 @@ export class AgentStore {
     }
     await this.appendEvent(runId, "run.status", {
       status,
+      run: this.toPublicRun(updated),
       ...(updated.terminalReason ? { reason: updated.terminalReason } : {}),
     });
     return updated;

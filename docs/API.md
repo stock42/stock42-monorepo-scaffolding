@@ -324,9 +324,18 @@ WebSocket nativo sobre ese mismo listener.
 `@stock42/api-client/realtime` implementa el cliente browser compartido: pide
 CSRF y ticket nuevos, valida el protocolo, renueva el ticket en cada reconexión,
 aplica backoff con jitter, reanuda desde cursor y entrega en orden aun si recibe
-eventos duplicados o fuera de secuencia. Webapp y Backoffice usan replay HTTP
-sólo como fallback durante una desconexión; el WebSocket no sustituye la fuente
-durable.
+eventos duplicados o fuera de secuencia. Tras aceptar un run por HTTP, el
+Backoffice recibe progreso, estado, respuesta terminal y replay exclusivamente
+por esta suscripción WebSocket; una reconexión abre otro socket y reanuda desde
+el cursor durable, sin polling browser a `GET /agent/runs/:id` ni a
+`GET /agent/runs/:id/events`.
+
+Los eventos `run.progress` exponen solamente resúmenes operativos acotados
+(`analyzing`, tools, confirmation y respuesta final). No publican
+`reasoning_content` del proveedor. Cada `run.status` incluye un snapshot del run
+público; por eso el evento terminal lleva el output necesario para renderizar la
+respuesta sin otra consulta HTTP. MongoDB y el endpoint interno por cursor
+siguen siendo la fuente durable que alimenta el bridge de la API.
 
 Límites vigentes:
 

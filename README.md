@@ -83,7 +83,7 @@ sequenceDiagram
   end
   RT->>DB: eventos, mensajes y artifacts
   API-->>UI: eventos WebSocket por topic nativo
-  UI->>API: replay HTTP por cursor si el canal cae
+  UI->>API: reconexión y replay desde cursor
 ```
 
 Cada run tiene estado durable. El launcher limita concurrencia global y por
@@ -120,9 +120,10 @@ memoria de un único proceso.
   `deepseek-v4-pro`.
 - Los uploads y artifacts usan filesystem local en esta etapa; object storage
   y operación multi-instancia pertenecen a la evolución P3.
-- Webapp y Backoffice usan WebSocket en operación normal y replay HTTP acotado
-  mientras el canal se reconecta. El WebSocket acelera la entrega; MongoDB y el
-  endpoint de eventos por cursor siguen siendo la fuente durable.
+- Webapp y Backoffice usan WebSocket en operación normal. El Backoffice recibe
+  progreso, respuesta terminal y replay por la suscripción WebSocket; la Webapp
+  conserva replay HTTP acotado mientras reconecta. MongoDB y el endpoint interno
+  de eventos por cursor siguen siendo la fuente durable.
 
 ## Stack técnico
 

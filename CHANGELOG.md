@@ -9,6 +9,12 @@ El formato sigue una versión simplificada de
 
 ### Added
 
+- El agente del Backoffice ahora usa el POST sólo para encolar y recibe por
+  WebSocket todo el progreso, replay, estado y respuesta terminal. El runtime
+  publica resúmenes operativos de análisis, tools, confirmations y preparación
+  de respuesta en una única línea reemplazable, sin exponer el
+  `reasoning_content` crudo del proveedor ni hacer polling HTTP desde el browser.
+
 - Se agregó ERA2.md con la visión arquitectónica y de producto para llevar el
   monorepo a una plataforma agent-native adoptable hacia 2030: baseline
   verificable, amenazas y deuda, Trust Kernel, Agent OS, software factory

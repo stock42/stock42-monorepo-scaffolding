@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   BackofficeAgentRunInputSchema,
+  AgentRunProgressSchema,
   CreateTelegramAiAccessInputSchema,
   CreateAgentRunInputSchema,
   CreateEmailCampaignInputSchema,
@@ -71,6 +72,22 @@ describe("shared contracts", () => {
         type: "subscribe",
         requestId: "one",
         channel: "everything",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("bounds the operational progress published for agent runs", () => {
+    expect(
+      AgentRunProgressSchema.safeParse({
+        stage: "analyzing",
+        message: "Analizando la solicitud...",
+        step: 1,
+      }).success,
+    ).toBe(true);
+    expect(
+      AgentRunProgressSchema.safeParse({
+        stage: "internal_chain_of_thought",
+        message: "Detalle interno",
       }).success,
     ).toBe(false);
   });

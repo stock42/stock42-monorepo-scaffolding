@@ -1268,12 +1268,13 @@ autenticación general.
 - códigos de cierre deliberados;
 - compresión deshabilitada por defecto;
 - validación de Origin;
-- replay durable por cursor mediante HTTP/MongoDB.
+- replay durable por cursor respaldado por HTTP/MongoDB.
 
 El WebSocket no es fuente de verdad. Después de una reconexión, el cliente usa
 el cursor para recuperar eventos faltantes. El cliente compartido renueva el
-ticket, aplica backoff con jitter y ordena/deduplica eventos; Webapp y
-Backoffice usan replay HTTP sólo mientras el canal está desconectado.
+ticket, aplica backoff con jitter y ordena/deduplica eventos. Backoffice pide el
+replay por la nueva suscripción WebSocket; Webapp conserva replay HTTP mientras
+el canal está desconectado.
 
 ## 21. Nginx
 

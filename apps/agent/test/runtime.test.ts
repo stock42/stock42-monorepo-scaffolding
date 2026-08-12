@@ -1,13 +1,21 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { loadAgentConfig } from "@/config";
 import { startInternalServer } from "@/http/server";
-import { createAssistantManifest } from "@/runtime/contracts/manifest";
+import { AgentOrchestrator } from "@/orchestration/AgentOrchestrator";
+import { createAssistantManifest, ManifestRegistry } from "@/runtime/contracts/manifest";
+import type { RunDocument } from "@/runtime/contracts/types";
 import { canAccessOwnedResource, ownerFilter } from "@/runtime/authorization";
 import type { AgentStore } from "@/runtime/store/AgentStore";
 import { commandArgumentsMatchRun } from "@/runtime/supervisor/Supervisor";
 import { TelegramApiError, TelegramClient } from "@/telegram/TelegramClient";
 import { TelegramPollingRuntime } from "@/telegram/TelegramPollingRuntime";
 import { csvCell, ToolRegistry } from "@/tools/registry/ToolRegistry";
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 function testConfig(overrides: Record<string, string | undefined> = {}) {
   return loadAgentConfig({
@@ -27,6 +35,103 @@ describe("durable agent baseline", () => {
     const config = testConfig();
     expect(config.deepseek.model).toBe("deepseek-v4-pro");
     expect(config.deepseek.reasoningEffort).toBe("high");
+  });
+
+  test("publishes safe progress before delivering the final run response", async () => {
+    const config = testConfig();
+    const now = new Date().toISOString();
+    const run: RunDocument = {
+      uuid: "30000000-0000-4000-8000-000000000001",
+      tenantId: "20000000-0000-4000-8000-000000000001",
+      actorId: "10000000-0000-4000-8000-000000000001",
+      actorRole: "tenant_owner",
+      conversationId: "40000000-0000-4000-8000-000000000001",
+      manifest: "assistant",
+      status: "running",
+      idempotencyKey: "idempotency-key",
+      input: {
+        task: "Estado del tenant",
+        manifest: "assistant",
+        idempotencyKey: "idempotency-key",
+        metadata: {},
+      },
+      output: null,
+      attempt: 1,
+      model: "deepseek-v4-pro",
+      reasoningEffort: "high",
+      createdAt: now,
+      updatedAt: now,
+      startedAt: now,
+      finishedAt: null,
+      terminalReason: null,
+      eventSequence: 0,
+      claimedBy: "launcher",
+      processId: "50000000-0000-4000-8000-000000000001",
+      pid: 42,
+      heartbeatAt: now,
+      progressAt: now,
+      deadlineAt: new Date(Date.now() + 60_000).toISOString(),
+      cancelRequestedAt: null,
+      terminationRequestedAt: null,
+      retryLimit: 1,
+      telegramDeliveryStatus: null,
+      telegramConfirmationNotifiedId: null,
+    };
+    const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    const store = {
+      getRun: async () => run,
+      nextResolvedConfirmation: async () => null,
+      messagesForConversation: async () => [],
+      assertActiveAttempt: async () => undefined,
+      appendEvent: async (_runId: string, type: string, payload: Record<string, unknown>) => {
+        emitted.push({ type, payload });
+        return {};
+      },
+      addMessage: async () => undefined,
+      transition: async (_runId: string, status: string, updates: Partial<RunDocument>) => {
+        Object.assign(run, updates, { status });
+        return run;
+      },
+      heartbeat: async () => undefined,
+    } as unknown as AgentStore;
+    globalThis.fetch = mock(() =>
+      Promise.resolve(
+        Response.json({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "Todo en orden.",
+                reasoning_content: "provider-private-reasoning",
+              },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+      ),
+    ) as unknown as typeof fetch;
+
+    await new AgentOrchestrator(config, store, new ManifestRegistry(config), {
+      list: () => [],
+    } as unknown as ToolRegistry).execute(run.uuid, run.processId!, new AbortController().signal);
+
+    expect(
+      emitted.filter((event) => event.type === "run.progress").map((event) => event.payload),
+    ).toEqual([
+      {
+        stage: "analyzing",
+        message: "Analizando la solicitud y seleccionando herramientas...",
+        step: 1,
+      },
+      {
+        stage: "responding",
+        message: "Preparando la respuesta final...",
+        step: 1,
+      },
+    ]);
+    expect(JSON.stringify(emitted)).not.toContain("provider-private-reasoning");
+    expect(run.output).toEqual({ answer: "Todo en orden." });
+    expect(run.status).toBe("succeeded");
   });
 
   test("declares process, heartbeat, cancellation and concurrency policy", () => {

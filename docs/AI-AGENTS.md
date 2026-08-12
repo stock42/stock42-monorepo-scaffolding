@@ -186,11 +186,20 @@ Flujo:
 6. El proceso marca `running`, emite heartbeat cercado por `processId` y ejecuta
    el orquestador con `AbortSignal`.
 7. El orquestador invoca DeepSeek y procesa como máximo 12 pasos.
-8. Cada mensaje, ejecución de tool y cambio de estado se persiste antes de
-   publicarse.
-9. El proceso finaliza o queda `waiting` por una confirmation.
-10. `Supervisor` controla procesos ausentes, deadlines, heartbeat y
+8. Antes y después de cada decisión operativa emite `run.progress` con una
+   descripción acotada: análisis, tool iniciada/completada/fallida, espera de
+   confirmation o preparación de respuesta.
+9. Cada mensaje, ejecución de tool y cambio de estado se persiste antes de
+   publicarse; `run.status` incluye el snapshot público actualizado para que el
+   consumidor reciba también el output terminal por WebSocket.
+10. El proceso finaliza o queda `waiting` por una confirmation.
+11. `Supervisor` controla procesos ausentes, deadlines, heartbeat y
     cancelaciones.
+
+El progreso visible describe el razonamiento operativo sin exponer la cadena de
+pensamiento cruda. `reasoning_content` se conserva en el mensaje interno para la
+continuidad exigida por el proveedor, pero nunca se copia al payload
+`run.progress` ni al WebSocket público.
 
 Un proceso que cae deja el run en `crashed`. Si no superó `retryLimit`, vuelve a
 `queued`.
@@ -419,14 +428,17 @@ El token se sanea de mensajes de error y nunca debe aparecer en logs.
 El agente puede invocarse por:
 
 - Webapp: HTTP BFF → API → agente;
-- Backoffice: HTTP BFF → API → agente, con WebSocket, replay y confirmations;
+- Backoffice: POST HTTP corto para encolar → WebSocket para progreso, respuesta,
+  replay y estado terminal;
 - Telegram: `getUpdates` → agente, usando accesos administrados por la API.
 
-Webapp y Backoffice reciben eventos normalmente por el WebSocket nativo de la
-API y usan replay HTTP por cursor como fallback durable durante una reconexión.
-El bridge API → agente todavía obtiene los eventos desde el endpoint interno
-autenticado por cursor; convertir esa ingestión en batch o stream es una mejora
-de escalabilidad, no una dependencia del cliente público.
+Los clientes reciben eventos por el WebSocket nativo de la API. Ante una
+desconexión obtienen un ticket nuevo, abren otro socket y vuelven a suscribirse
+con el cursor ya consumido; el Backoffice no consulta por HTTP el run ni sus
+eventos mientras espera la respuesta. El bridge API → agente todavía obtiene
+los eventos desde el endpoint interno autenticado por cursor; convertir esa
+ingestión en batch o stream es una mejora de escalabilidad, no una dependencia
+del cliente público.
 
 ## Desarrollo de una tool
 

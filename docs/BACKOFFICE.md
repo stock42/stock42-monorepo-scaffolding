@@ -178,14 +178,23 @@ Flujo de ejecución:
 4. conserva el `conversationId` para mensajes siguientes;
 5. obtiene un ticket de un uso y abre el WebSocket público con el subprotocolo
    versionado;
-6. se suscribe al run desde el cursor durable y actualiza estado y eventos;
-7. usa replay HTTP cada 3 segundos sólo mientras el canal se reconecta;
-8. muestra respuesta, estado e intento;
-9. permite cancelar;
-10. detecta `confirmation.required` y muestra tool, destino, tenant y preview
+6. se suscribe al run desde el cursor durable;
+7. recibe por WebSocket el progreso operativo, los snapshots de estado y la
+   respuesta terminal, sin polling HTTP del run ni de sus eventos;
+8. reemplaza una única línea visible con el paso actual: análisis, tool,
+   confirmation o preparación de respuesta;
+9. ante una desconexión renueva ticket, reconecta y pide replay por la misma
+   suscripción WebSocket desde el último cursor;
+10. muestra respuesta, estado e intento;
+11. permite cancelar;
+12. detecta `confirmation.required` y muestra tool, destino, tenant y preview
     server-owned cuando están disponibles;
-11. permite aprobar o rechazar sin permitir editar los argumentos;
-12. cierra el cliente al llegar a un estado terminal.
+13. permite aprobar o rechazar sin permitir editar los argumentos;
+14. cierra el cliente al llegar a un estado terminal.
+
+La línea de progreso muestra razonamiento operativo resumido, no el
+`reasoning_content` crudo del modelo. El POST de creación sólo acepta y encola la
+consulta; una vez recibido el run, toda su respuesta llega por WebSocket.
 
 Estados terminales:
 
