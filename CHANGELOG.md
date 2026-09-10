@@ -9,6 +9,12 @@ El formato sigue una versión simplificada de
 
 ### Added
 
+- Se agregó `MEJORAS.md` con un relevamiento del estado actual y 45 propuestas
+  concretas priorizadas, referencias al código, esfuerzo relativo y criterios
+  de aceptación. Incluye verificaciones locales, reproducciones controladas y
+  el resultado vigente de la auditoría de dependencias, sin implementar las
+  mejoras propuestas.
+
 - El agente del Backoffice ahora usa el POST sólo para encolar y recibe por
   WebSocket todo el progreso, replay, estado y respuesta terminal. El runtime
   publica resúmenes operativos de análisis, tools, confirmations y preparación
