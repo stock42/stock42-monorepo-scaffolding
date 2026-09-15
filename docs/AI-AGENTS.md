@@ -5,6 +5,10 @@
 `apps/agent` contiene toda la lógica agéntica del monorepo. Es un proceso
 privado, Bun-first y durable, inspirado en el runtime de VisionSanar.
 
+La actualización de dependencias del 2026-09-15 usa Zod `4.6.5` desde el
+catálogo raíz y mantiene MongoDB `6.21.0`, alineado con la API. Las versiones
+compartidas y sus restricciones se documentan en `GUIDE.md`.
+
 La aplicación:
 
 - recibe runs autenticados desde `apps/api`;

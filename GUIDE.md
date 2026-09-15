@@ -127,6 +127,37 @@ Los packages son JIT:
 `check-types` y `lint` dependen de sus equivalentes upstream, no de builds
 completos. Las tareas persistentes `dev` y `start` no usan caché.
 
+### Dependencias verificadas al 2026-09-15
+
+El catálogo fija Next.js y `eslint-config-next` en `16.3.5`, React/React DOM
+en `19.3.0`, Zod en `4.6.5` y Playwright en `1.63.0`. Tailwind CSS y su plugin
+PostCSS usan `^4.3.3`; Turborepo queda en `2.10.13`. La UI compartida usa
+`@base-ui/react@^1.8.0`, `@shadcn/react@^0.3.1`, `shadcn@4.21.0` y
+`recharts@3.10.1`.
+
+La actualización conserva las líneas mayores del stack y los vínculos
+`workspace:*`/`catalog:`. MongoDB permanece en `6.21.0`, alineado con
+`s42-core@3.0.14`; ESLint y `@eslint/js` usan `^9.39.5` porque los plugins React,
+import y JSX a11y de Next todavía declaran compatibilidad hasta ESLint 9.
+TypeScript sigue en `^5.9.3`: `typescript-eslint@8.70.0` admite versiones
+`>=4.8.4 <6.1.0`, por lo que no se instala TypeScript 7. Los tipos Node siguen
+en la línea 24 y Nodemailer se actualiza a `9.1.1` dentro de su línea actual.
+Los overrides transitivos conservan sus líneas mayores; `bun.lock` registra
+las resoluciones exactas. Se retira el override global de `brace-expansion`
+para que cada versión de `minimatch` resuelva su API compatible: la línea 3
+requiere el export CommonJS de `brace-expansion` 1, mientras la línea 10 usa
+el export nombrado de la versión 5.
+
+Validación local con Bun `1.4.2`: instalación frozen, typecheck, lint,
+60 tests del monorepo, 9 tests de configuración, 5 tests de boundaries y builds
+de ambas apps Next.js. `bun audit` pasó de 18 alertas a cero. El smoke de
+navegador sobre los builds verificó `/login`, interacción del formulario,
+assets e hidratación, layout desktop/mobile y redirección anónima desde
+`/dashboard`. Ese smoke no usa autenticación real, MongoDB ni proveedores
+externos; los servicios temporales se cierran al finalizar.
+También se verificaron la instalación frozen y los 60 tests del monorepo con
+Bun `1.3.14`, la versión fijada en CI y `packageManager`.
+
 ## 6. Configuración MongoDB
 
 API y agent deben usar exactamente los mismos `MONGODB_URI` y `MONGODB_DB`.
@@ -147,7 +178,7 @@ consumidores deben etiquetar fixtures con un `testRunId`, limitarlos al
 
 ## 7. API y s42-core
 
-La API fija `s42-core@3.0.13`. `Modules` descubre
+La API fija `s42-core@3.0.14`. `Modules` descubre
 `src/modules/**/__module__.ts`, `RouteControllers` despacha sus controllers y
 `WebSocketController`/`WebSocketControllers` administran la ruta `/ws`, su
 upgrade y lifecycle nativos. Las suscripciones y el fan-out usan

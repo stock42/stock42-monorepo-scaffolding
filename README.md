@@ -134,7 +134,7 @@ memoria de un único proceso.
 | Lenguaje                  | TypeScript 5.9                                             |
 | Web                       | Next.js 16, React 19, App Router, Tailwind CSS 4           |
 | UI                        | shadcn 4 `base-nova`, Base UI y componentes compartidos    |
-| API                       | `s42-core` 3.0.13 sobre un listener `Bun.serve` compartido |
+| API                       | `s42-core` 3.0.14 sobre un listener `Bun.serve` compartido |
 | Tiempo real               | WebSocket nativo de `s42-core`/Bun                         |
 | Persistencia              | MongoDB 6 driver, sin ORM                                  |
 | Email                     | SMTP mediante Nodemailer y spooler durable                 |

@@ -4,6 +4,11 @@
 
 `apps/backoffice` es la aplicación Next.js de control multi-tenant.
 
+Baseline de dependencias al 2026-09-15: Next.js `16.3.5`, React/React DOM
+`19.3.0`, Zod `4.6.5`, Playwright `1.63.0` y Tailwind CSS/PostCSS `^4.3.3`.
+El catálogo raíz y `@stock42/ui` mantienen las versiones compartidas con
+Webapp; las restricciones de actualización están en `GUIDE.md`.
+
 La base implementada permite:
 
 - login de administradores de plataforma y operadores;

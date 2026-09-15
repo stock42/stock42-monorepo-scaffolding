@@ -6,6 +6,10 @@
 de `s42-core`, MongoDB y contratos Zod compartidos desde
 `@stock42/contracts`.
 
+Dependencias actualizadas al 2026-09-15: `s42-core@3.0.14`,
+`nodemailer@9.1.1` y Zod `4.6.5` desde el catálogo raíz. MongoDB permanece en
+`6.21.0`, compatible con la dependencia publicada de `s42-core`.
+
 Sus responsabilidades son:
 
 - exponer HTTP y WebSocket en un único listener;

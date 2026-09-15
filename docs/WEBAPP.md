@@ -5,6 +5,11 @@
 `apps/webapp` es la aplicación Next.js para usuarios finales registrados dentro
 de un tenant.
 
+Baseline de dependencias al 2026-09-15: Next.js `16.3.5`, React/React DOM
+`19.3.0`, Zod `4.6.5`, Playwright `1.63.0` y Tailwind CSS/PostCSS `^4.3.3`.
+El catálogo raíz y `@stock42/ui` mantienen las versiones compartidas con
+Backoffice; las restricciones de actualización están en `GUIDE.md`.
+
 La base implementada incluye:
 
 - login por tenant slug, email y password;

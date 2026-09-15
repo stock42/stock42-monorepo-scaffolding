@@ -128,6 +128,17 @@ El formato sigue una versión simplificada de
 
 ### Changed
 
+- Se actualizaron las dependencias compatibles del monorepo y `bun.lock`,
+  verificadas contra npm el 2026-09-15: Next.js/ESLint Next `16.3.5`, React/React
+  DOM `19.3.0`, Zod `4.6.5`, Tailwind CSS `4.3.3`, Playwright `1.63.0`,
+  Turborepo `2.10.13`, `s42-core` `3.0.14`, Nodemailer `9.1.1` y las dependencias
+  de UI compartida. Se actualizaron los overrides dentro de sus líneas mayores
+  y se documentaron las restricciones de MongoDB, ESLint y TypeScript. Se retiró
+  el override global de `brace-expansion` para respetar las APIs distintas que
+  requieren las versiones de `minimatch` usadas por ESLint y su tooling. Se
+  incluyen los tipos `root-params` que Next.js genera en `next-env.d.ts` de
+  ambas webapps. Validado con typecheck, lint, 74 tests, ambos builds y smoke
+  de navegador desktop/mobile; `bun audit` pasó de 18 alertas a cero.
 - Se reemplazaron las instancias Mongo-backed de `apps/api` por storages y
   servicios estáticos: el boot registra el `MongoClient` como dependencia
   `db` de `s42-core`, cada operación resuelve su colección desde ese registro y
